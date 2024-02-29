@@ -1,0 +1,49 @@
+syntax = "proto3";
+
+option go_package = "github.com/je4/mediaserverpg/v2/pkg/pgcontroller";
+
+package pgcontroller;
+
+import "mediaserver/item.proto";
+
+message CreateRequest {
+  string name = 1;
+  string description = 2;
+}
+
+message CreateResponse {
+  string id = 1;
+}
+
+message ReadRequest {
+  string id = 1;
+}
+
+message ReadResponse {
+  string name = 1;
+  string description = 2;
+}
+
+message UpdateRequest {
+  string id = 1;
+  string name = 2;
+  string description = 3;
+}
+
+message UpdateResponse {
+}
+
+message DeleteRequest {
+  string id = 1;
+}
+
+message DeleteResponse {
+}
+
+
+service PGController {
+  rpc Create(mediaserver.Item) returns (CreateResponse) {}
+  rpc Read(ReadRequest) returns (ReadResponse) {}
+  rpc Update(UpdateRequest) returns (UpdateResponse) {}
+  rpc Delete(DeleteRequest) returns (DeleteResponse) {}
+}
