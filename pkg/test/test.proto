@@ -1,0 +1,17 @@
+syntax = "proto3";
+
+option go_package = "github.com/je4/mediaserverpg/v2/pkg/test";
+option java_package = "ch.unibas.ub.mediaserver.pg";
+option java_outer_classname = "PGProto";
+option java_multiple_files = true;
+option objc_class_prefix = "UBB";
+option csharp_namespace = "Unibas.UB.Mediaserver.PG";
+
+package test;
+
+import "item.proto";
+import "defaultResponse.proto";
+
+service PGController {
+  rpc CreateItem(mediaserverdbproto.NewItem) returns (mediaserverdbproto.DefaultResponse) {}
+}
