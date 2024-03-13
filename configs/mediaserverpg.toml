@@ -1,2 +1,4 @@
 dbconn = "%%DATABASE_URL%%"
-dbschema = "je_test"
+
+[tls]
+type = "self"

@@ -8,13 +8,19 @@ import (
 	"os"
 )
 
+type TLSConfig struct {
+	Type string `toml:"type"` // "ENV", "FILE", "SERVICE" OR "SELF"
+	Cert string `toml:"cert"`
+	Key  string `toml:"key"`
+	CA   string `toml:"ca"`
+}
+
 type MediaserverPGConfig struct {
-	LocalAddr    string           `toml:"localaddr"`
-	ExternalAddr string           `toml:"externaladdr"`
-	LogFile      string           `toml:"logfile"`
-	LogLevel     string           `toml:"loglevel"`
-	DBConn       config.EnvString `toml:"dbconn"`
-	DBSchema     string           `toml:"dbschema"`
+	LocalAddr string           `toml:"localaddr"`
+	TLS       TLSConfig        `toml:"tls"`
+	LogFile   string           `toml:"logfile"`
+	LogLevel  string           `toml:"loglevel"`
+	DBConn    config.EnvString `toml:"dbconn"`
 }
 
 func LoadMediaserverPGConfig(fSys fs.FS, fp string, conf *MediaserverPGConfig) error {
