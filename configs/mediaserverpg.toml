@@ -1,4 +1,5 @@
+localaddr = "localhost:7653"
 dbconn = "%%DATABASE_URL%%"
 
 [tls]
-type = "self"
+type = "dev"

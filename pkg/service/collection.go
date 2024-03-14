@@ -15,7 +15,7 @@ type collection struct {
 	Description     zeronull.Text `json:"description,omitempty"`
 	SignaturePrefix zeronull.Text `json:"signature_prefix,omitempty"`
 	Secret          zeronull.Text `json:"secret,omitempty"`
-	Public          bool          `json:"public,omitempty"`
+	Public          zeronull.Text `json:"public,omitempty"`
 	Jwtkey          zeronull.Text `json:"jwtkey,omitempty"`
 	Estateid        string        `json:"estateid,omitempty"`
 	Storageid       string        `json:"storageid,omitempty"`

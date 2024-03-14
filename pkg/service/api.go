@@ -3,12 +3,14 @@ package service
 import (
 	"context"
 	"emperror.dev/errors"
+	"fmt"
 	"github.com/bluele/gcache"
 	"github.com/jackc/pgx/v5"
 	"github.com/je4/mediaserverdb/v2/pkg/mediaserverdbproto"
 	"github.com/je4/utils/v2/pkg/zLogger"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
+	"google.golang.org/protobuf/types/known/emptypb"
 	"time"
 )
 
@@ -73,6 +75,9 @@ func (d *mediaserverPG) getCollection(id string) (*collection, error) {
 func (d *mediaserverPG) GetCollection(ctx context.Context, id *mediaserverdbproto.CollectionIdentifier) (*mediaserverdbproto.Collection, error) {
 	c, err := d.getCollection(id.GetCollection())
 	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, status.Errorf(codes.NotFound, "collection %s not found", id.GetCollection())
+		}
 		return nil, status.Errorf(codes.Internal, "cannot get collection %s: %v", id.GetCollection(), err)
 	}
 	return &mediaserverdbproto.Collection{
@@ -80,22 +85,77 @@ func (d *mediaserverPG) GetCollection(ctx context.Context, id *mediaserverdbprot
 		Identifier:  &mediaserverdbproto.CollectionIdentifier{Collection: c.Name},
 		Description: string(c.Description),
 		Secret:      string(c.Secret),
-		Public:      c.Public,
+		Public:      string(c.Public),
 		Jwtkey:      string(c.Jwtkey),
 		Storageid:   c.Storageid,
 	}, nil
 }
 
 func (d *mediaserverPG) CreateItem(ctx context.Context, item *mediaserverdbproto.NewItem) (*mediaserverdbproto.DefaultResponse, error) {
+	if item == nil {
+		return nil, status.Errorf(codes.InvalidArgument, "item is nil")
+	}
+	if item.GetIdentifier() == nil {
+		return nil, status.Errorf(codes.InvalidArgument, "item identifier is nil")
+	}
+	c, err := d.getCollection(item.GetIdentifier().GetCollection())
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "cannot get collection %s: %v", item.GetIdentifier().GetCollection(), err)
+	}
+	sqlStr := "INSERT INTO item (collectionid, signature, urn, public, status, creation_date, last_modified) VALUES ($1, $2, $3, $4, 'new', now(), now())"
+	params := []any{
+		c.Id, item.GetIdentifier().GetSignature(), item.GetUrn(), item.GetPublic(),
+	}
+	tag, err := d.conn.Exec(context.Background(),
+		sqlStr,
+		params...)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "cannot insert item %s [%v]: %v", sqlStr, params, err)
+	}
+	if tag.RowsAffected() != 1 {
+		return nil, status.Errorf(codes.Internal, "inserted %d rows instead of 1", tag.RowsAffected())
+	}
 	return &mediaserverdbproto.DefaultResponse{
 		Status:  mediaserverdbproto.ResultStatus_OK,
-		Message: "all fine",
+		Message: fmt.Sprintf("item %s/%s inserted", c.Name, item.GetIdentifier().GetSignature()),
 		Data:    nil,
 	}, nil
 }
 
-func (d *mediaserverPG) DeleteItem(context.Context, *mediaserverdbproto.ItemIdentifier) (*mediaserverdbproto.DefaultResponse, error) {
-	panic("implement me")
+func (d *mediaserverPG) DeleteItem(ctx context.Context, id *mediaserverdbproto.ItemIdentifier) (*mediaserverdbproto.DefaultResponse, error) {
+	if id == nil {
+		return nil, status.Errorf(codes.InvalidArgument, "item identifier is nil")
+	}
+	c, err := d.getCollection(id.GetCollection())
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "cannot get collection %s: %v", id.GetCollection(), err)
+	}
+	sqlStr := "DELETE FROM item WHERE collectionid = $1 AND signature = $2"
+	params := []any{
+		c.Id, id.GetSignature(),
+	}
+	tag, err := d.conn.Exec(context.Background(),
+		sqlStr,
+		params...)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "cannot delete item %s [%v]: %v", sqlStr, params, err)
+	}
+	if tag.RowsAffected() != 1 {
+		return nil, status.Errorf(codes.Internal, "deleted %d rows instead of 1", tag.RowsAffected())
+	}
+	return &mediaserverdbproto.DefaultResponse{
+		Status:  mediaserverdbproto.ResultStatus_OK,
+		Message: fmt.Sprintf("item %s/%s deleted", c.Name, id.GetSignature()),
+		Data:    nil,
+	}, nil
+}
+
+func (d *mediaserverPG) Ping(context.Context, *emptypb.Empty) (*mediaserverdbproto.DefaultResponse, error) {
+	return &mediaserverdbproto.DefaultResponse{
+		Status:  mediaserverdbproto.ResultStatus_OK,
+		Message: "pong",
+		Data:    nil,
+	}, nil
 }
 
 var _ mediaserverdbproto.DBControllerServer = (*mediaserverPG)(nil)
