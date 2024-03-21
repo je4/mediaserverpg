@@ -21,7 +21,7 @@ type collection struct {
 	Storageid       string        `json:"storageid,omitempty"`
 }
 
-func GetCollectionLoader(conn *pgx.Conn, logger zLogger.ZLogger) gcache.LoaderFunc {
+func getCollectionLoader(conn *pgx.Conn, logger zLogger.ZLogger) gcache.LoaderFunc {
 	getCollectionByIDSQL := "SELECT id, name, description, signature_prefix, secret, public, jwtkey, storageid, estateid FROM collection WHERE id = $1"
 	if _, err := conn.Prepare(context.Background(), "getCollectionByID", getCollectionByIDSQL); err != nil {
 		logger.Panic().Err(err).Msg("cannot prepare statement")
@@ -49,6 +49,9 @@ func GetCollectionLoader(conn *pgx.Conn, logger zLogger.ZLogger) gcache.LoaderFu
 			sql,
 			id,
 		).Scan(&coll.Id, &coll.Name, &coll.Description, &coll.SignaturePrefix, &coll.Secret, &coll.Public, &coll.Jwtkey, &coll.Storageid, &coll.Estateid); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return nil, errors.Wrapf(errors.Combine(err, gcache.KeyNotFoundError), "collection %s not found", id)
+			}
 			return nil, errors.Wrapf(err, "cannot get collection %s from database", id)
 		}
 		return coll, nil

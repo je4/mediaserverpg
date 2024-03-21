@@ -17,7 +17,7 @@ type storage struct {
 	Tempdir    string `json:"tempdir,omitempty"`
 }
 
-func GetStorageLoader(conn *pgx.Conn, logger zLogger.ZLogger) gcache.LoaderFunc {
+func getStorageLoader(conn *pgx.Conn, logger zLogger.ZLogger) gcache.LoaderFunc {
 	getStorageSQL := "SELECT id, name, filebase, datadir, subitemdir, tempdir FROM storage WHERE id = $1"
 	if _, err := conn.Prepare(context.Background(), "getStorage", getStorageSQL); err != nil {
 		logger.Panic().Err(err).Msg("cannot prepare statement")
@@ -34,6 +34,9 @@ func GetStorageLoader(conn *pgx.Conn, logger zLogger.ZLogger) gcache.LoaderFunc 
 			"getStorage",
 			id,
 		).Scan(&s.Id, &s.Name, &s.Filebase, &s.Datadir, &s.Subitemdir, &s.Tempdir); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return nil, errors.Wrapf(errors.Combine(err, gcache.KeyNotFoundError), "storage %s not found", id)
+			}
 			return nil, errors.Wrapf(err, "cannot get storage %s from database", id)
 		}
 		return s, nil

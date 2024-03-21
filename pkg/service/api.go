@@ -5,12 +5,15 @@ import (
 	"emperror.dev/errors"
 	"fmt"
 	"github.com/bluele/gcache"
+	"github.com/jackc/pgtype/zeronull"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/je4/mediaserverdb/v2/pkg/mediaserverdbproto"
 	"github.com/je4/utils/v2/pkg/zLogger"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
+	"sync"
 	"time"
 )
 
@@ -19,8 +22,8 @@ func NewMediaserverPG(conn *pgx.Conn, logger zLogger.ZLogger) *mediaserverPG {
 	return &mediaserverPG{
 		conn:            conn,
 		logger:          logger,
-		storageCache:    gcache.New(100).Expiration(time.Minute * 10).LRU().LoaderFunc(GetStorageLoader(conn, logger)).Build(),
-		collectionCache: gcache.New(200).Expiration(time.Minute * 10).LRU().LoaderFunc(GetCollectionLoader(conn, logger)).Build(),
+		storageCache:    gcache.New(100).Expiration(time.Minute * 10).LRU().LoaderFunc(getStorageLoader(conn, logger)).Build(),
+		collectionCache: gcache.New(200).Expiration(time.Minute * 10).LRU().LoaderFunc(getCollectionLoader(conn, logger)).Build(),
 	}
 }
 
@@ -100,16 +103,22 @@ func (d *mediaserverPG) CreateItem(ctx context.Context, item *mediaserverdbproto
 	}
 	c, err := d.getCollection(item.GetIdentifier().GetCollection())
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "cannot get collection %s: %v", item.GetIdentifier().GetCollection(), err)
+		return nil, status.Errorf(codes.InvalidArgument, "cannot get collection %s: %v", item.GetIdentifier().GetCollection(), err)
 	}
 	sqlStr := "INSERT INTO item (collectionid, signature, urn, public, status, creation_date, last_modified) VALUES ($1, $2, $3, $4, 'new', now(), now())"
 	params := []any{
-		c.Id, item.GetIdentifier().GetSignature(), item.GetUrn(), item.GetPublic(),
+		c.Id, item.GetIdentifier().GetSignature(), item.GetUrn(), zeronull.Text(item.GetPublic()),
 	}
 	tag, err := d.conn.Exec(context.Background(),
 		sqlStr,
 		params...)
 	if err != nil {
+		var pgError *pgconn.PgError
+		if errors.As(err, &pgError) {
+			if pgError.Code == "23505" {
+				return nil, status.Errorf(codes.AlreadyExists, "item %s/%s already exists", c.Name, item.GetIdentifier().GetSignature())
+			}
+		}
 		return nil, status.Errorf(codes.Internal, "cannot insert item %s [%v]: %v", sqlStr, params, err)
 	}
 	if tag.RowsAffected() != 1 {
@@ -150,12 +159,73 @@ func (d *mediaserverPG) DeleteItem(ctx context.Context, id *mediaserverdbproto.I
 	}, nil
 }
 
+func (d *mediaserverPG) ExistsItem(ctx context.Context, id *mediaserverdbproto.ItemIdentifier) (*mediaserverdbproto.DefaultResponse, error) {
+	if id == nil {
+		return nil, status.Errorf(codes.InvalidArgument, "item identifier is nil")
+	}
+	c, err := d.getCollection(id.GetCollection())
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "cannot get collection %s: %v", id.GetCollection(), err)
+	}
+	sqlStr := "SELECT count(*) FROM item WHERE collectionid = $1 AND signature = $2"
+	params := []any{
+		c.Id, id.GetSignature(),
+	}
+	var count int
+	if err := d.conn.QueryRow(context.Background(),
+		sqlStr,
+		params...).Scan(&count); err != nil {
+		return nil, status.Errorf(codes.Internal, "cannot delete item %s [%v]: %v", sqlStr, params, err)
+	}
+	if count == 0 {
+		return &mediaserverdbproto.DefaultResponse{
+			Status:  mediaserverdbproto.ResultStatus_NotFound,
+			Message: fmt.Sprintf("item %s/%s not found", c.Name, id.GetSignature()),
+			Data:    nil,
+		}, nil
+	}
+	return &mediaserverdbproto.DefaultResponse{
+		Status:  mediaserverdbproto.ResultStatus_OK,
+		Message: fmt.Sprintf("item %s/%s exists", c.Name, id.GetSignature()),
+		Data:    nil,
+	}, nil
+}
+
 func (d *mediaserverPG) Ping(context.Context, *emptypb.Empty) (*mediaserverdbproto.DefaultResponse, error) {
 	return &mediaserverdbproto.DefaultResponse{
 		Status:  mediaserverdbproto.ResultStatus_OK,
 		Message: "pong",
 		Data:    nil,
 	}, nil
+}
+
+// overlapping of GetIngestItem calls must be prevented
+var getIngestItemMutex = &sync.Mutex{}
+
+func (d *mediaserverPG) GetIngestItem(context.Context, *emptypb.Empty) (*mediaserverdbproto.IngestItem, error) {
+	var result = &mediaserverdbproto.IngestItem{
+		Identifier: &mediaserverdbproto.ItemIdentifier{},
+	}
+	getIngestItemMutex.Lock()
+	defer getIngestItemMutex.Unlock()
+	sqlStr := "SELECT id, collectionid, signature, urn FROM item WHERE status = 'new' OR (status = 'indexing' and last_modified < now() - interval '1 hour') ORDER BY last_modified ASC LIMIT 1"
+	var collectionid, itemid string
+	if err := d.conn.QueryRow(context.Background(), sqlStr).Scan(&itemid, &collectionid, &result.Identifier.Signature, &result.Urn); err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, status.Errorf(codes.NotFound, "no ingest item found")
+		}
+		return nil, status.Errorf(codes.Internal, "cannot get ingest item: %v", err)
+	}
+	c, err := d.getCollection(collectionid)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "cannot get collection %s: %v", collectionid, err)
+	}
+	result.Identifier.Collection = c.Name
+	sqlStr2 := "UPDATE item SET status = 'indexing', last_modified = now() WHERE id = $1"
+	if _, err := d.conn.Exec(context.Background(), sqlStr2, itemid); err != nil {
+		return nil, status.Errorf(codes.Internal, "cannot update item %s to indexing: %v", itemid, err)
+	}
+	return result, nil
 }
 
 var _ mediaserverdbproto.DBControllerServer = (*mediaserverPG)(nil)
