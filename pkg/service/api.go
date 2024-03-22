@@ -13,6 +13,7 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/emptypb"
+	"google.golang.org/protobuf/types/known/timestamppb"
 	"sync"
 	"time"
 )
@@ -157,6 +158,117 @@ func (d *mediaserverPG) DeleteItem(ctx context.Context, id *mediaserverdbproto.I
 		Message: fmt.Sprintf("item %s/%s deleted", c.Name, id.GetSignature()),
 		Data:    nil,
 	}, nil
+}
+
+func (d *mediaserverPG) GetItem(ctx context.Context, id *mediaserverdbproto.ItemIdentifier) (*mediaserverdbproto.Item, error) {
+	if id == nil {
+		return nil, status.Errorf(codes.InvalidArgument, "item identifier is nil")
+	}
+	c, err := d.getCollection(id.GetCollection())
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "cannot get collection %s: %v", id.GetCollection(), err)
+	}
+	var _type zeronull.Text
+	var subtype zeronull.Text
+	var mimetype zeronull.Text
+	var errorstr zeronull.Text
+	var sha512 zeronull.Text
+	var metadata zeronull.Text
+	var creation_date zeronull.Timestamp
+	var last_modified zeronull.Timestamp
+	var disabled bool
+	var public bool
+	var public_actions zeronull.Text
+	var statusStr string
+	var parentid zeronull.UUID
+	sqlStr := `SELECT 
+       urn,
+       type,
+       subtype,
+       objecttype,
+       mimetype,
+       error,
+       sha512,
+       metadata,
+       creation_date,
+       last_modified,
+       disabled,
+       public,
+       public_actions,
+       status,
+       parentid
+FROM item 
+WHERE collectionid = $1 AND signature = $2`
+	params := []any{
+		c.Id, id.GetSignature(),
+	}
+	var item = &mediaserverdbproto.Item{
+		Identifier: &mediaserverdbproto.ItemIdentifier{
+			Collection: id.GetCollection(),
+			Signature:  id.GetSignature(),
+		},
+	}
+	if err := d.conn.QueryRow(context.Background(),
+		sqlStr,
+		params...).Scan(
+		&item.Urn,
+		&_type,
+		&subtype,
+		&item.Objecttype,
+		&mimetype,
+		&errorstr,
+		&sha512,
+		&metadata,
+		&creation_date,
+		&last_modified,
+		&disabled,
+		&public,
+		&public_actions,
+		&statusStr,
+		&parentid,
+	); err != nil {
+		return nil, status.Errorf(codes.Internal, "cannot get item %s [%v]: %v", sqlStr, params, err)
+	}
+	if _type != "" {
+		item.Type = (*string)(&_type)
+	}
+	if subtype != "" {
+		item.Subtype = (*string)(&subtype)
+	}
+	if mimetype != "" {
+		item.Mimetype = (*string)(&mimetype)
+	}
+	if errorstr != "" {
+		item.Error = (*string)(&errorstr)
+	}
+	if sha512 != "" {
+		item.Sha512 = (*string)(&sha512)
+	}
+	if metadata != "" {
+		item.Metadata = ([]byte)(metadata)
+	}
+	if !time.Time(creation_date).IsZero() {
+		item.Created = timestamppb.New(time.Time(creation_date))
+	}
+	if !time.Time(last_modified).IsZero() {
+		item.Updated = timestamppb.New(time.Time(last_modified))
+	}
+	item.Disabled = disabled
+	item.Public = public
+	if public_actions != "" {
+		item.PublicActions = ([]byte)(public_actions)
+	}
+	item.Status = statusStr
+	if parentid[0] != 0 {
+		sqlStr = `SELECT collectionid, signature FROM item WHERE id = $1`
+		params = []any{
+			parentid,
+		}
+		if err := d.conn.QueryRow(context.Background(), sqlStr, params...).Scan(&item.Parent.Collection, &item.Parent.Signature); err != nil {
+			return nil, status.Errorf(codes.Internal, "cannot get parent item %s [%v]: %v", sqlStr, params, err)
+		}
+	}
+	return item, nil
 }
 
 func (d *mediaserverPG) ExistsItem(ctx context.Context, id *mediaserverdbproto.ItemIdentifier) (*mediaserverdbproto.DefaultResponse, error) {
