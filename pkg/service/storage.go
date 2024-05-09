@@ -18,8 +18,12 @@ type storage struct {
 }
 
 func getStorageLoader(conn *pgx.Conn, logger zLogger.ZLogger) gcache.LoaderFunc {
-	getStorageSQL := "SELECT id, name, filebase, datadir, subitemdir, tempdir FROM storage WHERE id = $1"
-	if _, err := conn.Prepare(context.Background(), "getStorage", getStorageSQL); err != nil {
+	getStorageByIDSQL := "SELECT id, name, filebase, datadir, subitemdir, tempdir FROM storage WHERE id = $1"
+	if _, err := conn.Prepare(context.Background(), "getStorageByID", getStorageByIDSQL); err != nil {
+		logger.Panic().Err(err).Msg("cannot prepare statement")
+	}
+	getStorageByNameSQL := "SELECT id, name, filebase, datadir, subitemdir, tempdir FROM storage WHERE name = $1"
+	if _, err := conn.Prepare(context.Background(), "getStorageByName", getStorageByNameSQL); err != nil {
 		logger.Panic().Err(err).Msg("cannot prepare statement")
 	}
 	return func(key interface{}) (interface{}, error) {
@@ -27,11 +31,18 @@ func getStorageLoader(conn *pgx.Conn, logger zLogger.ZLogger) gcache.LoaderFunc 
 		if !ok {
 			return nil, errors.Errorf("key %v is not a string", key)
 		}
-		logger.Debug().Msgf("%s, [%s]", getStorageSQL, id)
+		var sql string
+		if IsValidUUID(id) {
+			sql = "getCollectionByID"
+			logger.Debug().Msgf("%s, [%s]", getStorageByIDSQL, id)
+		} else {
+			sql = "getCollectionByName"
+			logger.Debug().Msgf("%s, [%s]", getStorageByNameSQL, id)
+		}
 		s := &storage{}
 		if err := conn.QueryRow(
 			context.Background(),
-			"getStorage",
+			sql,
 			id,
 		).Scan(&s.Id, &s.Name, &s.Filebase, &s.Datadir, &s.Subitemdir, &s.Tempdir); err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {

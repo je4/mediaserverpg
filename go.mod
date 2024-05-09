@@ -7,7 +7,7 @@ require (
 	github.com/BurntSushi/toml v1.3.2
 	github.com/jackc/pgx/v4 v4.18.2
 	github.com/jackc/pgx/v5 v5.5.4
-	github.com/je4/mediaserverdb/v2 v2.0.1
+	github.com/je4/mediaserverdb/v2 v2.0.3
 	github.com/je4/trustutil/v2 v2.0.1
 	github.com/je4/utils/v2 v2.0.23
 	github.com/rs/zerolog v1.32.0

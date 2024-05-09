@@ -49,13 +49,12 @@ func (d *mediaserverPG) getStorage(id string) (*storage, error) {
 }
 
 func (d *mediaserverPG) GetStorage(ctx context.Context, id *mediaserverdbproto.StorageIdentifier) (*mediaserverdbproto.Storage, error) {
-	s, err := d.getStorage(id.GetId())
+	s, err := d.getStorage(id.GetName())
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "cannot get storage %s: %v", id.GetId(), err)
+		return nil, status.Errorf(codes.Internal, "cannot get storage %s: %v", id.GetName(), err)
 	}
 
 	return &mediaserverdbproto.Storage{
-		Id:         s.Id,
 		Name:       s.Name,
 		Filebase:   s.Filebase,
 		Datadir:    s.Datadir,
@@ -84,15 +83,52 @@ func (d *mediaserverPG) GetCollection(ctx context.Context, id *mediaserverdbprot
 		}
 		return nil, status.Errorf(codes.Internal, "cannot get collection %s: %v", id.GetCollection(), err)
 	}
+	s := &mediaserverdbproto.Storage{
+		Name:       c.Storage.Name,
+		Filebase:   c.Storage.Filebase,
+		Datadir:    c.Storage.Datadir,
+		Subitemdir: c.Storage.Subitemdir,
+		Tempdir:    c.Storage.Tempdir,
+	}
 	return &mediaserverdbproto.Collection{
-		Id:          c.Id,
-		Identifier:  &mediaserverdbproto.CollectionIdentifier{Collection: c.Name},
+		Name:        c.Name,
 		Description: string(c.Description),
 		Secret:      string(c.Secret),
 		Public:      string(c.Public),
 		Jwtkey:      string(c.Jwtkey),
-		Storageid:   c.Storageid,
+		Storage:     s,
 	}, nil
+}
+func (d *mediaserverPG) GetCollections(context.Context, *mediaserverdbproto.PageToken) (*mediaserverdbproto.Collections, error) {
+	// todo: add paging
+	result := &mediaserverdbproto.Collections{
+		Collections: []*mediaserverdbproto.Collection{},
+		NextPageToken: &mediaserverdbproto.PageToken{
+			Data: "",
+		},
+	}
+	collections, err := getCollections(d.conn, d.logger)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "cannot get collections: %v", err)
+	}
+	for _, c := range collections {
+		s := &mediaserverdbproto.Storage{
+			Name:       c.Storage.Name,
+			Filebase:   c.Storage.Filebase,
+			Datadir:    c.Storage.Datadir,
+			Subitemdir: c.Storage.Subitemdir,
+			Tempdir:    c.Storage.Tempdir,
+		}
+		result.Collections = append(result.Collections, &mediaserverdbproto.Collection{
+			Name:        c.Name,
+			Description: string(c.Description),
+			Secret:      string(c.Secret),
+			Public:      string(c.Public),
+			Jwtkey:      string(c.Jwtkey),
+			Storage:     s,
+		})
+	}
+	return result, nil
 }
 
 func (d *mediaserverPG) CreateItem(ctx context.Context, item *mediaserverdbproto.NewItem) (*mediaserverdbproto.DefaultResponse, error) {
@@ -106,9 +142,20 @@ func (d *mediaserverPG) CreateItem(ctx context.Context, item *mediaserverdbproto
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "cannot get collection %s: %v", item.GetIdentifier().GetCollection(), err)
 	}
-	sqlStr := "INSERT INTO item (collectionid, signature, urn, public, status, creation_date, last_modified) VALUES ($1, $2, $3, $4, 'new', now(), now())"
+	sqlStr := "INSERT INTO item (collectionid, signature, urn, public, status, creation_date, last_modified) VALUES ($1, $2, $3, $4, $5, now(), now())"
+	var newstatus string
+	switch item.GetIngestType() {
+	case mediaserverdbproto.IngestType_KEEP:
+		newstatus = "new"
+	case mediaserverdbproto.IngestType_COPY:
+		newstatus = "newcopy"
+	case mediaserverdbproto.IngestType_MOVE:
+		newstatus = "newmove"
+	default:
+		return nil, status.Errorf(codes.InvalidArgument, "invalid ingest type %s", item.GetIngestType())
+	}
 	params := []any{
-		c.Id, item.GetIdentifier().GetSignature(), item.GetUrn(), zeronull.Text(item.GetPublic()),
+		c.Id, item.GetIdentifier().GetSignature(), item.GetUrn(), item.GetPublic(), newstatus,
 	}
 	tag, err := d.conn.Exec(context.Background(),
 		sqlStr,
@@ -207,6 +254,7 @@ WHERE collectionid = $1 AND signature = $2`
 			Collection: id.GetCollection(),
 			Signature:  id.GetSignature(),
 		},
+		Metadata: &mediaserverdbproto.ItemMetadata{},
 	}
 	if err := d.conn.QueryRow(context.Background(),
 		sqlStr,
@@ -214,7 +262,7 @@ WHERE collectionid = $1 AND signature = $2`
 		&item.Urn,
 		&_type,
 		&subtype,
-		&item.Objecttype,
+		&item.Metadata.Objecttype,
 		&mimetype,
 		&errorstr,
 		&sha512,
@@ -230,22 +278,22 @@ WHERE collectionid = $1 AND signature = $2`
 		return nil, status.Errorf(codes.Internal, "cannot get item %s [%v]: %v", sqlStr, params, err)
 	}
 	if _type != "" {
-		item.Type = (*string)(&_type)
+		item.Metadata.Type = (*string)(&_type)
 	}
 	if subtype != "" {
-		item.Subtype = (*string)(&subtype)
+		item.Metadata.Subtype = (*string)(&subtype)
 	}
 	if mimetype != "" {
-		item.Mimetype = (*string)(&mimetype)
+		item.Metadata.Mimetype = (*string)(&mimetype)
 	}
 	if errorstr != "" {
-		item.Error = (*string)(&errorstr)
+		item.Metadata.Error = (*string)(&errorstr)
 	}
 	if sha512 != "" {
-		item.Sha512 = (*string)(&sha512)
+		item.Metadata.Sha512 = (*string)(&sha512)
 	}
 	if metadata != "" {
-		item.Metadata = ([]byte)(metadata)
+		item.Metadata.Metadata = ([]byte)(metadata)
 	}
 	if !time.Time(creation_date).IsZero() {
 		item.Created = timestamppb.New(time.Time(creation_date))
@@ -320,9 +368,9 @@ func (d *mediaserverPG) GetIngestItem(context.Context, *emptypb.Empty) (*mediase
 	}
 	getIngestItemMutex.Lock()
 	defer getIngestItemMutex.Unlock()
-	sqlStr := "SELECT id, collectionid, signature, urn FROM item WHERE status = 'new' OR (status = 'indexing' and last_modified < now() - interval '1 hour') ORDER BY last_modified ASC LIMIT 1"
-	var collectionid, itemid string
-	if err := d.conn.QueryRow(context.Background(), sqlStr).Scan(&itemid, &collectionid, &result.Identifier.Signature, &result.Urn); err != nil {
+	sqlStr := "SELECT id, collectionid, signature, urn, status FROM item WHERE status IN ('new','newcopy','newmove') OR (status IN ('indexing','indexingcopy','indexingmove') and last_modified < now() - interval '1 hour') ORDER BY last_modified ASC LIMIT 1"
+	var collectionid, itemid, statusStr string
+	if err := d.conn.QueryRow(context.Background(), sqlStr).Scan(&itemid, &collectionid, &result.Identifier.Signature, &result.Urn, &statusStr); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, status.Errorf(codes.NotFound, "no ingest item found")
 		}
@@ -333,8 +381,47 @@ func (d *mediaserverPG) GetIngestItem(context.Context, *emptypb.Empty) (*mediase
 		return nil, status.Errorf(codes.Internal, "cannot get collection %s: %v", collectionid, err)
 	}
 	result.Identifier.Collection = c.Name
-	sqlStr2 := "UPDATE item SET status = 'indexing', last_modified = now() WHERE id = $1"
-	if _, err := d.conn.Exec(context.Background(), sqlStr2, itemid); err != nil {
+	result.Collection = &mediaserverdbproto.Collection{
+		Name:        c.Name,
+		Description: string(c.Description),
+		Secret:      string(c.Secret),
+		Public:      string(c.Public),
+		Jwtkey:      string(c.Jwtkey),
+		Storage: &mediaserverdbproto.Storage{
+			Name:       c.Storage.Name,
+			Filebase:   c.Storage.Filebase,
+			Datadir:    c.Storage.Datadir,
+			Subitemdir: c.Storage.Subitemdir,
+			Tempdir:    c.Storage.Tempdir,
+		},
+	}
+	result.IngestType = mediaserverdbproto.IngestType_KEEP
+	var newstatus string
+	switch statusStr {
+	case "newcopy":
+		result.IngestType = mediaserverdbproto.IngestType_COPY
+		newstatus = "indexingcopy"
+	case "newmove":
+		result.IngestType = mediaserverdbproto.IngestType_MOVE
+		newstatus = "indexingmove"
+	case "new":
+		result.IngestType = mediaserverdbproto.IngestType_KEEP
+		newstatus = "indexing"
+	case "indexingcopy":
+		result.IngestType = mediaserverdbproto.IngestType_COPY
+		newstatus = "indexingcopy"
+	case "indexingmove":
+		result.IngestType = mediaserverdbproto.IngestType_MOVE
+		newstatus = "indexingmove"
+	case "indexing":
+		result.IngestType = mediaserverdbproto.IngestType_KEEP
+		newstatus = "indexing"
+	default:
+		return nil, status.Errorf(codes.Internal, "invalid status %s", statusStr)
+	}
+
+	sqlStr2 := "UPDATE item SET status = $1, last_modified = now() WHERE id = $2"
+	if _, err := d.conn.Exec(context.Background(), sqlStr2, newstatus, itemid); err != nil {
 		return nil, status.Errorf(codes.Internal, "cannot update item %s to indexing: %v", itemid, err)
 	}
 	return result, nil
