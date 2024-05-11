@@ -10,11 +10,13 @@ import (
 )
 
 type MediaserverPGConfig struct {
-	LocalAddr string           `toml:"localaddr"`
-	TLS       loader.TLSConfig `toml:"tls"`
-	LogFile   string           `toml:"logfile"`
-	LogLevel  string           `toml:"loglevel"`
-	DBConn    config.EnvString `toml:"dbconn"`
+	LocalAddr    string           `toml:"localaddr"`
+	ResolverAddr string           `toml:"resolveraddr"`
+	ServerTLS    loader.TLSConfig `toml:"servertls"`
+	ClientTLS    loader.TLSConfig `toml:"clienttls"`
+	LogFile      string           `toml:"logfile"`
+	LogLevel     string           `toml:"loglevel"`
+	DBConn       config.EnvString `toml:"dbconn"`
 }
 
 func LoadMediaserverPGConfig(fSys fs.FS, fp string, conf *MediaserverPGConfig) error {

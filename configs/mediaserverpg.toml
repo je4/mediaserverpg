@@ -1,5 +1,9 @@
 localaddr = "localhost:7653"
+resolveraddr = "localhost:7777"
 dbconn = "%%DATABASE_URL%%"
 
-[tls]
+[servertls]
+type = "dev"
+
+[clienttls]
 type = "dev"

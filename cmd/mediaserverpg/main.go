@@ -8,7 +8,8 @@ import (
 	pb "github.com/je4/mediaserverdb/v2/pkg/mediaserverdbproto"
 	"github.com/je4/mediaserverpg/v2/configs"
 	"github.com/je4/mediaserverpg/v2/pkg/service"
-	"github.com/je4/trustutil/v2/pkg/grpchelper"
+	resolverclient "github.com/je4/miniresolver/v2/pkg/client"
+	"github.com/je4/miniresolver/v2/pkg/grpchelper"
 	"github.com/je4/trustutil/v2/pkg/loader"
 	"github.com/je4/utils/v2/pkg/zLogger"
 	"github.com/rs/zerolog"
@@ -73,13 +74,24 @@ func main() {
 
 	srv := service.NewMediaserverPG(conn, logger)
 
-	tlsConfig, l, err := loader.CreateServerLoader(true, &conf.TLS, nil, logger)
+	serverTLSConfig, serverLoader, err := loader.CreateServerLoader(true, &conf.ServerTLS, nil, logger)
 	if err != nil {
 		logger.Fatal().Err(err).Msg("cannot create server loader")
 	}
-	defer l.Close()
+	defer serverLoader.Close()
+	clientTLSConfig, clientLoader, err := loader.CreateClientLoader(&conf.ClientTLS, logger)
+	if err != nil {
+		logger.Fatal().Err(err).Msg("cannot create client loader")
+	}
+	defer clientLoader.Close()
 
-	grpcServer, err := grpchelper.NewServer(conf.LocalAddr, tlsConfig, logger)
+	resolver, resolverCloser, err := resolverclient.CreateClient(conf.ResolverAddr, clientTLSConfig)
+	if err != nil {
+		logger.Fatal().Err(err).Msg("cannot create resolver client")
+	}
+	defer resolverCloser.Close()
+
+	grpcServer, err := grpchelper.NewServer(conf.LocalAddr, serverTLSConfig, resolver, logger)
 	if err != nil {
 		logger.Fatal().Err(err).Msg("cannot create server")
 	}
