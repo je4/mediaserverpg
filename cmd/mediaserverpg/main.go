@@ -74,6 +74,7 @@ func main() {
 
 	srv := service.NewMediaserverPG(conn, logger)
 
+	// todo: certificate for grpc domain
 	serverTLSConfig, serverLoader, err := loader.CreateServerLoader(true, &conf.ServerTLS, nil, logger)
 	if err != nil {
 		logger.Fatal().Err(err).Msg("cannot create server loader")
