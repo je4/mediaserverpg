@@ -19,7 +19,6 @@ import (
 )
 
 func NewMediaserverPG(conn *pgx.Conn, logger zLogger.ZLogger) *mediaserverPG {
-
 	return &mediaserverPG{
 		conn:            conn,
 		logger:          logger,

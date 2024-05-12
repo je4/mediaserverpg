@@ -1,5 +1,5 @@
-localaddr = "localhost:7653"
-resolveraddr = "localhost:7777"
+localaddr = ":7653"
+resolveraddr = "[::1]:7777"
 dbconn = "%%DATABASE_URL%%"
 
 [servertls]

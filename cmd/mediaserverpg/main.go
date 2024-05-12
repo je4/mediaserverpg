@@ -10,6 +10,7 @@ import (
 	"github.com/je4/mediaserverpg/v2/pkg/service"
 	resolverclient "github.com/je4/miniresolver/v2/pkg/client"
 	"github.com/je4/miniresolver/v2/pkg/grpchelper"
+	"github.com/je4/trustutil/v2/pkg/certutil"
 	"github.com/je4/trustutil/v2/pkg/loader"
 	"github.com/je4/utils/v2/pkg/zLogger"
 	"github.com/rs/zerolog"
@@ -74,7 +75,8 @@ func main() {
 
 	srv := service.NewMediaserverPG(conn, logger)
 
-	// todo: certificate for grpc domain
+	// hack, needed if miniresolver is used in dev mode...
+	certutil.AddDefaultDNSNames(grpchelper.GetService(pb.DBController_Ping_FullMethodName))
 	serverTLSConfig, serverLoader, err := loader.CreateServerLoader(true, &conf.ServerTLS, nil, logger)
 	if err != nil {
 		logger.Fatal().Err(err).Msg("cannot create server loader")
