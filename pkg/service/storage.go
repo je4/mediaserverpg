@@ -5,6 +5,7 @@ import (
 	"emperror.dev/errors"
 	"github.com/bluele/gcache"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/je4/utils/v2/pkg/zLogger"
 )
 
@@ -17,15 +18,7 @@ type storage struct {
 	Tempdir    string `json:"tempdir,omitempty"`
 }
 
-func getStorageLoader(conn *pgx.Conn, logger zLogger.ZLogger) gcache.LoaderFunc {
-	getStorageByIDSQL := "SELECT id, name, filebase, datadir, subitemdir, tempdir FROM storage WHERE id = $1"
-	if _, err := conn.Prepare(context.Background(), "getStorageByID", getStorageByIDSQL); err != nil {
-		logger.Panic().Err(err).Msg("cannot prepare statement")
-	}
-	getStorageByNameSQL := "SELECT id, name, filebase, datadir, subitemdir, tempdir FROM storage WHERE name = $1"
-	if _, err := conn.Prepare(context.Background(), "getStorageByName", getStorageByNameSQL); err != nil {
-		logger.Panic().Err(err).Msg("cannot prepare statement")
-	}
+func getStorageLoader(conn *pgxpool.Pool, logger zLogger.ZLogger) gcache.LoaderFunc {
 	return func(key interface{}) (interface{}, error) {
 		id, ok := key.(string)
 		if !ok {
@@ -33,11 +26,11 @@ func getStorageLoader(conn *pgx.Conn, logger zLogger.ZLogger) gcache.LoaderFunc 
 		}
 		var sql string
 		if IsValidUUID(id) {
-			sql = "getCollectionByID"
-			logger.Debug().Msgf("%s, [%s]", getStorageByIDSQL, id)
+			sql = "getStorageByID"
+			logger.Debug().Msgf("%s, [%s]", sql, id)
 		} else {
-			sql = "getCollectionByName"
-			logger.Debug().Msgf("%s, [%s]", getStorageByNameSQL, id)
+			sql = "getStorageByName"
+			logger.Debug().Msgf("%s, [%s]", sql, id)
 		}
 		s := &storage{}
 		if err := conn.QueryRow(

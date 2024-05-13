@@ -8,6 +8,7 @@ import (
 	"github.com/jackc/pgtype/zeronull"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/je4/mediaserverdb/v2/pkg/mediaserverdbproto"
 	"github.com/je4/utils/v2/pkg/zLogger"
 	"google.golang.org/grpc/codes"
@@ -18,21 +19,121 @@ import (
 	"time"
 )
 
-func NewMediaserverPG(conn *pgx.Conn, logger zLogger.ZLogger) *mediaserverPG {
+var customTypes = []string{"item_type", "item_objecttype"}
+var preparedStatements = map[string]string{
+	"getItemBySignature":  "SELECT id, collectionid, signature, urn, type, subtype, objecttype, mimetype, error, sha512, metadata, creation_date, last_modified, disabled, public, public_actions, status, parentid FROM item WHERE collectionid = $1 AND signature = $2",
+	"getStorageByID":      "SELECT id, name, filebase, datadir, subitemdir, tempdir FROM storage WHERE id = $1",
+	"getStorageByName":    "SELECT id, name, filebase, datadir, subitemdir, tempdir FROM storage WHERE name = $1",
+	"getCollectionByID":   "SELECT c.id, c.name, c.description, c.signature_prefix, c.secret, c.public, c.jwtkey, s.name AS storagename, s.filebase AS storageFilebase, s.datadir AS storageDatadir, s.subitemdir AS storageSubitemdir, s.tempdir AS storageTempdir, e.name AS estatename FROM collection c, storage s, estate e WHERE c.id = $1 AND c.storageid = s.id AND c.estateid = e.id",
+	"getCollectionByName": "SELECT c.id, c.name, c.description, c.signature_prefix, c.secret, c.public, c.jwtkey, s.name AS storagename, s.filebase AS storagefilebase, s.datadir AS storagedatadir, s.subitemdir AS storagesubitemdir, s.tempdir AS storagetempdir, e.name AS estatename FROM collection c, storage s, estate e WHERE c.name = $1 AND c.storageid = s.id AND c.estateid = e.id",
+}
+
+func AfterConnectFunc(ctx context.Context, conn *pgx.Conn, logger zLogger.ZLogger) error {
+	for _, typeName := range customTypes {
+		t, err := conn.LoadType(ctx, typeName)
+		if err != nil {
+			return errors.Wrapf(err, "cannot load type '%s'", typeName)
+		}
+		conn.TypeMap().RegisterType(t)
+	}
+	for name, sql := range preparedStatements {
+		if _, err := conn.Prepare(ctx, name, sql); err != nil {
+			return errors.Wrapf(err, "cannot prepare statement '%s' - '%s'", name, sql)
+		}
+	}
+	/*
+		getItemBySignatureSQL := "SELECT id, collectionid, signature, urn, type, subtype, objecttype, mimetype, error, sha512, metadata, creation_date, last_modified, disabled, public, public_actions, status, parentid FROM item WHERE collectionid = $1 AND signature = $2"
+		if _, err := conn.Prepare(ctx, "getItemBySignature", getItemBySignatureSQL); err != nil {
+			return errors.Wrapf(err, "cannot prepare statement '%s'", getItemBySignatureSQL)
+		}
+		getStorageByIDSQL := "SELECT id, name, filebase, datadir, subitemdir, tempdir FROM storage WHERE id = $1"
+		if _, err := conn.Prepare(ctx, "getStorageByID", getStorageByIDSQL); err != nil {
+			return errors.Wrapf(err, "cannot prepare statement '%s'", getStorageByIDSQL)
+		}
+		getStorageByNameSQL := "SELECT id, name, filebase, datadir, subitemdir, tempdir FROM storage WHERE name = $1"
+		if _, err := conn.Prepare(ctx, "getStorageByName", getStorageByNameSQL); err != nil {
+			return errors.Wrapf(err, "cannot prepare statement '%s'", getStorageByNameSQL)
+		}
+
+		getCollectionByIDSQL := "SELECT c.id, c.name, c.description, c.signature_prefix, c.secret, c.public, c.jwtkey, s.name AS storagename, s.filebase AS storageFilebase, s.datadir AS storageDatadir, s.subitemdir AS storageSubitemdir, s.tempdir AS storageTempdir, e.name AS estatename FROM collection c, storage s, estate e WHERE c.id = $1 AND c.storageid = s.id AND c.estateid = e.id"
+		if _, err := conn.Prepare(ctx, "getCollectionByID", getCollectionByIDSQL); err != nil {
+			logger.Panic().Err(err).Msg("cannot prepare statement")
+		}
+		getCollectionByNameSQL := "SELECT c.id, c.name, c.description, c.signature_prefix, c.secret, c.public, c.jwtkey, s.name AS storagename, s.filebase AS storagefilebase, s.datadir AS storagedatadir, s.subitemdir AS storagesubitemdir, s.tempdir AS storagetempdir, e.name AS estatename FROM collection c, storage s, estate e WHERE c.name = $1 AND c.storageid = s.id AND c.estateid = e.id"
+		if _, err := conn.Prepare(ctx, "getCollectionByName", getCollectionByNameSQL); err != nil {
+			logger.Panic().Err(err).Msg("cannot prepare statement")
+		}
+
+	*/
+
+	return nil
+}
+
+func NewMediaserverPG(conn *pgxpool.Pool, logger zLogger.ZLogger) (*mediaserverPG, error) {
 	return &mediaserverPG{
 		conn:            conn,
 		logger:          logger,
 		storageCache:    gcache.New(100).Expiration(time.Minute * 10).LRU().LoaderFunc(getStorageLoader(conn, logger)).Build(),
 		collectionCache: gcache.New(200).Expiration(time.Minute * 10).LRU().LoaderFunc(getCollectionLoader(conn, logger)).Build(),
-	}
+	}, nil
 }
 
 type mediaserverPG struct {
 	mediaserverdbproto.UnimplementedDBControllerServer
 	logger          zLogger.ZLogger
-	conn            *pgx.Conn
+	conn            *pgxpool.Pool
 	storageCache    gcache.Cache
 	collectionCache gcache.Cache
+}
+
+func (d *mediaserverPG) getItem(collection, signature string) (*item, error) {
+	coll, err := d.getCollection(collection)
+	if err != nil {
+		return nil, errors.Wrapf(err, "cannot get collection %s", collection)
+	}
+	i := &item{}
+	var parentID zeronull.Text
+	var _type zeronull.Text
+	var subtype zeronull.Text
+	var objecttype zeronull.Text
+	var mimetype zeronull.Text
+	var errorStr zeronull.Text
+	var sha512 zeronull.Text
+	var metadata zeronull.Text
+	var publicActions zeronull.Text
+	if err := d.conn.QueryRow(context.Background(), "getItemBySignature", coll.Id, signature).Scan(
+		&i.Id,
+		&i.Collectionid,
+		&i.Signature,
+		&i.Urn,
+		&_type,
+		&subtype,
+		&objecttype,
+		&mimetype,
+		&errorStr,
+		&sha512,
+		&metadata,
+		&i.CreationDate,
+		&i.LastModified,
+		&i.Disabled,
+		&i.Public,
+		&publicActions,
+		&i.Status,
+		&parentID,
+	); err != nil {
+		return nil, errors.Wrapf(err, "cannot get item %s/%s - %s", coll.Id, signature, "getItemBySignature")
+	}
+	i.PartentId = string(parentID)
+	i.Type = string(_type)
+	i.Subtype = string(subtype)
+	i.Objecttype = string(objecttype)
+	i.Mimetype = string(mimetype)
+	i.Error = string(errorStr)
+	i.Sha512 = string(sha512)
+	i.Metadata = string(metadata)
+	i.PublicActions = string(publicActions)
+
+	return i, nil
 }
 
 func (d *mediaserverPG) getStorage(id string) (*storage, error) {
@@ -248,7 +349,7 @@ WHERE collectionid = $1 AND signature = $2`
 	params := []any{
 		c.Id, id.GetSignature(),
 	}
-	var item = &mediaserverdbproto.Item{
+	var it = &mediaserverdbproto.Item{
 		Identifier: &mediaserverdbproto.ItemIdentifier{
 			Collection: id.GetCollection(),
 			Signature:  id.GetSignature(),
@@ -258,10 +359,10 @@ WHERE collectionid = $1 AND signature = $2`
 	if err := d.conn.QueryRow(context.Background(),
 		sqlStr,
 		params...).Scan(
-		&item.Urn,
+		&it.Urn,
 		&_type,
 		&subtype,
-		&item.Metadata.Objecttype,
+		&it.Metadata.Objecttype,
 		&mimetype,
 		&errorstr,
 		&sha512,
@@ -277,45 +378,45 @@ WHERE collectionid = $1 AND signature = $2`
 		return nil, status.Errorf(codes.Internal, "cannot get item %s [%v]: %v", sqlStr, params, err)
 	}
 	if _type != "" {
-		item.Metadata.Type = (*string)(&_type)
+		it.Metadata.Type = (*string)(&_type)
 	}
 	if subtype != "" {
-		item.Metadata.Subtype = (*string)(&subtype)
+		it.Metadata.Subtype = (*string)(&subtype)
 	}
 	if mimetype != "" {
-		item.Metadata.Mimetype = (*string)(&mimetype)
+		it.Metadata.Mimetype = (*string)(&mimetype)
 	}
 	if errorstr != "" {
-		item.Metadata.Error = (*string)(&errorstr)
+		it.Metadata.Error = (*string)(&errorstr)
 	}
 	if sha512 != "" {
-		item.Metadata.Sha512 = (*string)(&sha512)
+		it.Metadata.Sha512 = (*string)(&sha512)
 	}
 	if metadata != "" {
-		item.Metadata.Metadata = ([]byte)(metadata)
+		it.Metadata.Metadata = ([]byte)(metadata)
 	}
 	if !time.Time(creation_date).IsZero() {
-		item.Created = timestamppb.New(time.Time(creation_date))
+		it.Created = timestamppb.New(time.Time(creation_date))
 	}
 	if !time.Time(last_modified).IsZero() {
-		item.Updated = timestamppb.New(time.Time(last_modified))
+		it.Updated = timestamppb.New(time.Time(last_modified))
 	}
-	item.Disabled = disabled
-	item.Public = public
+	it.Disabled = disabled
+	it.Public = public
 	if public_actions != "" {
-		item.PublicActions = ([]byte)(public_actions)
+		it.PublicActions = ([]byte)(public_actions)
 	}
-	item.Status = statusStr
+	it.Status = statusStr
 	if parentid[0] != 0 {
 		sqlStr = `SELECT collectionid, signature FROM item WHERE id = $1`
 		params = []any{
 			parentid,
 		}
-		if err := d.conn.QueryRow(context.Background(), sqlStr, params...).Scan(&item.Parent.Collection, &item.Parent.Signature); err != nil {
+		if err := d.conn.QueryRow(context.Background(), sqlStr, params...).Scan(&it.Parent.Collection, &it.Parent.Signature); err != nil {
 			return nil, status.Errorf(codes.Internal, "cannot get parent item %s [%v]: %v", sqlStr, params, err)
 		}
 	}
-	return item, nil
+	return it, nil
 }
 
 func (d *mediaserverPG) ExistsItem(ctx context.Context, id *mediaserverdbproto.ItemIdentifier) (*mediaserverdbproto.DefaultResponse, error) {
@@ -424,6 +525,87 @@ func (d *mediaserverPG) GetIngestItem(context.Context, *emptypb.Empty) (*mediase
 		return nil, status.Errorf(codes.Internal, "cannot update item %s to indexing: %v", itemid, err)
 	}
 	return result, nil
+}
+
+func (d *mediaserverPG) SetIngestItem(ctx context.Context, metadata *mediaserverdbproto.IngestMetadata) (*mediaserverdbproto.DefaultResponse, error) {
+	if metadata == nil {
+		return nil, status.Errorf(codes.InvalidArgument, "metadata is nil")
+	}
+	metaItemMetadata := metadata.GetItemMetadata()
+	if metaItemMetadata == nil {
+		return nil, status.Errorf(codes.InvalidArgument, "item metadata is nil")
+	}
+	metaCacheMetadata := metadata.GetCacheMetadata()
+	if metaCacheMetadata == nil {
+		return nil, status.Errorf(codes.InvalidArgument, "cache metadata is nil")
+	}
+	coll, err := d.getCollection(metadata.GetItem().GetCollection())
+	if err != nil {
+		d.logger.Error().Err(err).Msg("cannot get collection")
+		return nil, status.Errorf(codes.Internal, "cannot get collection: %v", err)
+	}
+	tx, err := d.conn.Begin(ctx)
+	if err != nil {
+		d.logger.Error().Err(err).Msg("cannot start transaction")
+		return nil, status.Errorf(codes.Internal, "cannot start transaction: %v", err)
+	}
+	defer tx.Rollback(ctx)
+	sqlStr := "UPDATE item SET type = $1, subtype = $2, objecttype = $3, mimetype = $4, error = $5, sha512 = $6, metadata = $7, last_modified = now(), status = $8 WHERE collectionid = $9 AND signature = $10"
+	params := []any{
+		metaItemMetadata.GetType(),
+		metaItemMetadata.GetSubtype(),
+		metaItemMetadata.GetObjecttype(),
+		metaItemMetadata.GetMimetype(),
+		metaItemMetadata.GetError(),
+		metaItemMetadata.GetSha512(),
+		metaItemMetadata.GetMetadata(),
+		metadata.GetStatus(),
+		coll.Id,
+		metadata.GetItem().GetSignature(),
+	}
+	if _, err := tx.Exec(ctx, sqlStr, params...); err != nil {
+		d.logger.Error().Err(err).Msgf("cannot update item - '%s' - %v", sqlStr, params)
+		return nil, status.Errorf(codes.Internal, "cannot update item - '%s' - %v: %v", sqlStr, params, err)
+	}
+	if metadata.GetStatus() == "ok" {
+		it, err := d.getItem(metadata.GetItem().GetCollection(), metadata.GetItem().GetSignature())
+		if err != nil {
+			d.logger.Error().Err(err).Msgf("cannot get item %s/%s", metadata.GetItem().GetCollection(), metadata.GetItem().GetSignature())
+			return nil, status.Errorf(codes.Internal, "cannot get item %s/%s: %v", metadata.GetItem().GetCollection(), metadata.GetItem().GetSignature(), err)
+
+		}
+		stor, err := d.getStorage(metaCacheMetadata.GetStorageName())
+		if err != nil {
+			d.logger.Error().Err(err).Msgf("cannot get storage %s", coll.Storage.Name)
+			return nil, status.Errorf(codes.Internal, "cannot get storage %s: %v", coll.Storage.Name, err)
+		}
+		sqlStr = "INSERT INTO cache (collectionid, itemid, action, width, height, duration, mimetype, filesize, path, storageid) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)"
+		params = []any{
+			coll.Id,
+			it.Id,
+			"item",
+			metaCacheMetadata.GetWidth(),
+			metaCacheMetadata.GetHeight(),
+			metaCacheMetadata.GetDuration(),
+			metaCacheMetadata.GetMimeType(),
+			metaCacheMetadata.GetSize(),
+			metaCacheMetadata.GetPath(),
+			stor.Id,
+		}
+		if _, err := tx.Exec(ctx, sqlStr, params...); err != nil {
+			d.logger.Error().Err(err).Msgf("cannot insert cache - '%s' - %v", sqlStr, params)
+			return nil, status.Errorf(codes.Internal, "cannot insert cache - '%s' - %v: %v", sqlStr, params, err)
+		}
+	}
+	if err := tx.Commit(ctx); err != nil {
+		d.logger.Error().Err(err).Msg("cannot commit transaction")
+		return nil, status.Errorf(codes.Internal, "cannot commit transaction: %v", err)
+	}
+	return &mediaserverdbproto.DefaultResponse{
+		Status:  mediaserverdbproto.ResultStatus_OK,
+		Message: "item updated",
+		Data:    nil,
+	}, nil
 }
 
 var _ mediaserverdbproto.DBControllerServer = (*mediaserverPG)(nil)

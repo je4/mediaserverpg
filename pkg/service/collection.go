@@ -6,6 +6,7 @@ import (
 	"github.com/bluele/gcache"
 	"github.com/jackc/pgtype/zeronull"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/je4/utils/v2/pkg/zLogger"
 )
 
@@ -21,7 +22,7 @@ type collection struct {
 	Storage         *storage      `json:"storageName,omitempty"`
 }
 
-func getCollections(conn *pgx.Conn, logger zLogger.ZLogger) ([]*collection, error) {
+func getCollections(conn *pgxpool.Pool, logger zLogger.ZLogger) ([]*collection, error) {
 	getCollectionsSQL := "SELECT c.id, c.name, c.description, c.signature_prefix, c.secret, c.public, c.jwtkey, s.name AS storagename, s.filebase AS storageFilebase, s.datadir AS storageDatadir, s.subitemdir AS storageSubitemdir, s.tempdir AS storageTempdir, e.name AS estatename FROM collection c, storage s, estate e WHERE c.storageid = s.id AND c.estateid = e.id"
 	rows, err := conn.Query(context.Background(), getCollectionsSQL)
 	if err != nil {
@@ -41,15 +42,7 @@ func getCollections(conn *pgx.Conn, logger zLogger.ZLogger) ([]*collection, erro
 	return colls, nil
 }
 
-func getCollectionLoader(conn *pgx.Conn, logger zLogger.ZLogger) gcache.LoaderFunc {
-	getCollectionByIDSQL := "SELECT c.id, c.name, c.description, c.signature_prefix, c.secret, c.public, c.jwtkey, s.name AS storagename, s.filebase AS storageFilebase, s.datadir AS storageDatadir, s.subitemdir AS storageSubitemdir, s.tempdir AS storageTempdir, e.name AS estatename FROM collection c, storage s, estate e WHERE c.id = $1 AND c.storageid = s.id AND c.estateid = e.id"
-	if _, err := conn.Prepare(context.Background(), "getCollectionByID", getCollectionByIDSQL); err != nil {
-		logger.Panic().Err(err).Msg("cannot prepare statement")
-	}
-	getCollectionByNameSQL := "SELECT c.id, c.name, c.description, c.signature_prefix, c.secret, c.public, c.jwtkey, s.name AS storagename , e.name AS estatename FROM collection c, storage s, estate e WHERE c.name = $1 AND c.storageid = s.id AND c.estateid = e.id"
-	if _, err := conn.Prepare(context.Background(), "getCollectionByName", getCollectionByNameSQL); err != nil {
-		logger.Panic().Err(err).Msg("cannot prepare statement")
-	}
+func getCollectionLoader(conn *pgxpool.Pool, logger zLogger.ZLogger) gcache.LoaderFunc {
 	return func(key interface{}) (interface{}, error) {
 		id, ok := key.(string)
 		if !ok {
@@ -60,10 +53,10 @@ func getCollectionLoader(conn *pgx.Conn, logger zLogger.ZLogger) gcache.LoaderFu
 		var sql string
 		if IsValidUUID(id) {
 			sql = "getCollectionByID"
-			logger.Debug().Msgf("%s, [%s]", getCollectionByIDSQL, id)
+			logger.Debug().Msgf("%s, [%s]", "getCollectionByID", id)
 		} else {
 			sql = "getCollectionByName"
-			logger.Debug().Msgf("%s, [%s]", getCollectionByNameSQL, id)
+			logger.Debug().Msgf("%s, [%s]", "getCollectionByName", id)
 		}
 		if err := conn.QueryRow(
 			context.Background(),
