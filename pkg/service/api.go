@@ -572,12 +572,15 @@ func (d *mediaserverPG) SetIngestItem(ctx context.Context, metadata *mediaserver
 		if err != nil {
 			d.logger.Error().Err(err).Msgf("cannot get item %s/%s", metadata.GetItem().GetCollection(), metadata.GetItem().GetSignature())
 			return nil, status.Errorf(codes.Internal, "cannot get item %s/%s: %v", metadata.GetItem().GetCollection(), metadata.GetItem().GetSignature(), err)
-
 		}
-		stor, err := d.getStorage(metaCacheMetadata.GetStorageName())
-		if err != nil {
-			d.logger.Error().Err(err).Msgf("cannot get storage %s", coll.Storage.Name)
-			return nil, status.Errorf(codes.Internal, "cannot get storage %s: %v", coll.Storage.Name, err)
+		var storageID zeronull.Text
+		if metaCacheMetadata.GetStorageName() != "" {
+			stor, err := d.getStorage(metaCacheMetadata.GetStorageName())
+			if err != nil {
+				d.logger.Error().Err(err).Msgf("cannot get storage %s", coll.Storage.Name)
+				return nil, status.Errorf(codes.Internal, "cannot get storage %s: %v", coll.Storage.Name, err)
+			}
+			storageID = zeronull.Text(stor.Id)
 		}
 		sqlStr = "INSERT INTO cache (collectionid, itemid, action, width, height, duration, mimetype, filesize, path, storageid) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)"
 		params = []any{
@@ -590,7 +593,7 @@ func (d *mediaserverPG) SetIngestItem(ctx context.Context, metadata *mediaserver
 			metaCacheMetadata.GetMimeType(),
 			metaCacheMetadata.GetSize(),
 			metaCacheMetadata.GetPath(),
-			stor.Id,
+			storageID,
 		}
 		if _, err := tx.Exec(ctx, sqlStr, params...); err != nil {
 			d.logger.Error().Err(err).Msgf("cannot insert cache - '%s' - %v", sqlStr, params)
