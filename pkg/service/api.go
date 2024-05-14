@@ -9,7 +9,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
-	"github.com/je4/mediaserverdb/v2/pkg/mediaserverdbproto"
+	pb "github.com/je4/mediaserverproto/v2/pkg/mediaserverdb/proto"
 	"github.com/je4/utils/v2/pkg/zLogger"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -79,7 +79,7 @@ func NewMediaserverPG(conn *pgxpool.Pool, logger zLogger.ZLogger) (*mediaserverP
 }
 
 type mediaserverPG struct {
-	mediaserverdbproto.UnimplementedDBControllerServer
+	pb.UnimplementedDBControllerServer
 	logger          zLogger.ZLogger
 	conn            *pgxpool.Pool
 	storageCache    gcache.Cache
@@ -148,13 +148,13 @@ func (d *mediaserverPG) getStorage(id string) (*storage, error) {
 	return s, nil
 }
 
-func (d *mediaserverPG) GetStorage(ctx context.Context, id *mediaserverdbproto.StorageIdentifier) (*mediaserverdbproto.Storage, error) {
+func (d *mediaserverPG) GetStorage(ctx context.Context, id *pb.StorageIdentifier) (*pb.Storage, error) {
 	s, err := d.getStorage(id.GetName())
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "cannot get storage %s: %v", id.GetName(), err)
 	}
 
-	return &mediaserverdbproto.Storage{
+	return &pb.Storage{
 		Name:       s.Name,
 		Filebase:   s.Filebase,
 		Datadir:    s.Datadir,
@@ -175,7 +175,7 @@ func (d *mediaserverPG) getCollection(id string) (*collection, error) {
 	return c, nil
 }
 
-func (d *mediaserverPG) GetCollection(ctx context.Context, id *mediaserverdbproto.CollectionIdentifier) (*mediaserverdbproto.Collection, error) {
+func (d *mediaserverPG) GetCollection(ctx context.Context, id *pb.CollectionIdentifier) (*pb.Collection, error) {
 	c, err := d.getCollection(id.GetCollection())
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -183,14 +183,14 @@ func (d *mediaserverPG) GetCollection(ctx context.Context, id *mediaserverdbprot
 		}
 		return nil, status.Errorf(codes.Internal, "cannot get collection %s: %v", id.GetCollection(), err)
 	}
-	s := &mediaserverdbproto.Storage{
+	s := &pb.Storage{
 		Name:       c.Storage.Name,
 		Filebase:   c.Storage.Filebase,
 		Datadir:    c.Storage.Datadir,
 		Subitemdir: c.Storage.Subitemdir,
 		Tempdir:    c.Storage.Tempdir,
 	}
-	return &mediaserverdbproto.Collection{
+	return &pb.Collection{
 		Name:        c.Name,
 		Description: string(c.Description),
 		Secret:      string(c.Secret),
@@ -199,11 +199,11 @@ func (d *mediaserverPG) GetCollection(ctx context.Context, id *mediaserverdbprot
 		Storage:     s,
 	}, nil
 }
-func (d *mediaserverPG) GetCollections(context.Context, *mediaserverdbproto.PageToken) (*mediaserverdbproto.Collections, error) {
+func (d *mediaserverPG) GetCollections(context.Context, *pb.PageToken) (*pb.Collections, error) {
 	// todo: add paging
-	result := &mediaserverdbproto.Collections{
-		Collections: []*mediaserverdbproto.Collection{},
-		NextPageToken: &mediaserverdbproto.PageToken{
+	result := &pb.Collections{
+		Collections: []*pb.Collection{},
+		NextPageToken: &pb.PageToken{
 			Data: "",
 		},
 	}
@@ -212,14 +212,14 @@ func (d *mediaserverPG) GetCollections(context.Context, *mediaserverdbproto.Page
 		return nil, status.Errorf(codes.Internal, "cannot get collections: %v", err)
 	}
 	for _, c := range collections {
-		s := &mediaserverdbproto.Storage{
+		s := &pb.Storage{
 			Name:       c.Storage.Name,
 			Filebase:   c.Storage.Filebase,
 			Datadir:    c.Storage.Datadir,
 			Subitemdir: c.Storage.Subitemdir,
 			Tempdir:    c.Storage.Tempdir,
 		}
-		result.Collections = append(result.Collections, &mediaserverdbproto.Collection{
+		result.Collections = append(result.Collections, &pb.Collection{
 			Name:        c.Name,
 			Description: string(c.Description),
 			Secret:      string(c.Secret),
@@ -231,7 +231,7 @@ func (d *mediaserverPG) GetCollections(context.Context, *mediaserverdbproto.Page
 	return result, nil
 }
 
-func (d *mediaserverPG) CreateItem(ctx context.Context, item *mediaserverdbproto.NewItem) (*mediaserverdbproto.DefaultResponse, error) {
+func (d *mediaserverPG) CreateItem(ctx context.Context, item *pb.NewItem) (*pb.DefaultResponse, error) {
 	if item == nil {
 		return nil, status.Errorf(codes.InvalidArgument, "item is nil")
 	}
@@ -245,11 +245,11 @@ func (d *mediaserverPG) CreateItem(ctx context.Context, item *mediaserverdbproto
 	sqlStr := "INSERT INTO item (collectionid, signature, urn, public, status, creation_date, last_modified) VALUES ($1, $2, $3, $4, $5, now(), now())"
 	var newstatus string
 	switch item.GetIngestType() {
-	case mediaserverdbproto.IngestType_KEEP:
+	case pb.IngestType_KEEP:
 		newstatus = "new"
-	case mediaserverdbproto.IngestType_COPY:
+	case pb.IngestType_COPY:
 		newstatus = "newcopy"
-	case mediaserverdbproto.IngestType_MOVE:
+	case pb.IngestType_MOVE:
 		newstatus = "newmove"
 	default:
 		return nil, status.Errorf(codes.InvalidArgument, "invalid ingest type %s", item.GetIngestType())
@@ -272,14 +272,14 @@ func (d *mediaserverPG) CreateItem(ctx context.Context, item *mediaserverdbproto
 	if tag.RowsAffected() != 1 {
 		return nil, status.Errorf(codes.Internal, "inserted %d rows instead of 1", tag.RowsAffected())
 	}
-	return &mediaserverdbproto.DefaultResponse{
-		Status:  mediaserverdbproto.ResultStatus_OK,
+	return &pb.DefaultResponse{
+		Status:  pb.ResultStatus_OK,
 		Message: fmt.Sprintf("item %s/%s inserted", c.Name, item.GetIdentifier().GetSignature()),
 		Data:    nil,
 	}, nil
 }
 
-func (d *mediaserverPG) DeleteItem(ctx context.Context, id *mediaserverdbproto.ItemIdentifier) (*mediaserverdbproto.DefaultResponse, error) {
+func (d *mediaserverPG) DeleteItem(ctx context.Context, id *pb.ItemIdentifier) (*pb.DefaultResponse, error) {
 	if id == nil {
 		return nil, status.Errorf(codes.InvalidArgument, "item identifier is nil")
 	}
@@ -300,14 +300,14 @@ func (d *mediaserverPG) DeleteItem(ctx context.Context, id *mediaserverdbproto.I
 	if tag.RowsAffected() != 1 {
 		return nil, status.Errorf(codes.Internal, "deleted %d rows instead of 1", tag.RowsAffected())
 	}
-	return &mediaserverdbproto.DefaultResponse{
-		Status:  mediaserverdbproto.ResultStatus_OK,
+	return &pb.DefaultResponse{
+		Status:  pb.ResultStatus_OK,
 		Message: fmt.Sprintf("item %s/%s deleted", c.Name, id.GetSignature()),
 		Data:    nil,
 	}, nil
 }
 
-func (d *mediaserverPG) GetItem(ctx context.Context, id *mediaserverdbproto.ItemIdentifier) (*mediaserverdbproto.Item, error) {
+func (d *mediaserverPG) GetItem(ctx context.Context, id *pb.ItemIdentifier) (*pb.Item, error) {
 	if id == nil {
 		return nil, status.Errorf(codes.InvalidArgument, "item identifier is nil")
 	}
@@ -349,12 +349,12 @@ WHERE collectionid = $1 AND signature = $2`
 	params := []any{
 		c.Id, id.GetSignature(),
 	}
-	var it = &mediaserverdbproto.Item{
-		Identifier: &mediaserverdbproto.ItemIdentifier{
+	var it = &pb.Item{
+		Identifier: &pb.ItemIdentifier{
 			Collection: id.GetCollection(),
 			Signature:  id.GetSignature(),
 		},
-		Metadata: &mediaserverdbproto.ItemMetadata{},
+		Metadata: &pb.ItemMetadata{},
 	}
 	if err := d.conn.QueryRow(context.Background(),
 		sqlStr,
@@ -419,7 +419,7 @@ WHERE collectionid = $1 AND signature = $2`
 	return it, nil
 }
 
-func (d *mediaserverPG) ExistsItem(ctx context.Context, id *mediaserverdbproto.ItemIdentifier) (*mediaserverdbproto.DefaultResponse, error) {
+func (d *mediaserverPG) ExistsItem(ctx context.Context, id *pb.ItemIdentifier) (*pb.DefaultResponse, error) {
 	if id == nil {
 		return nil, status.Errorf(codes.InvalidArgument, "item identifier is nil")
 	}
@@ -438,22 +438,22 @@ func (d *mediaserverPG) ExistsItem(ctx context.Context, id *mediaserverdbproto.I
 		return nil, status.Errorf(codes.Internal, "cannot delete item %s [%v]: %v", sqlStr, params, err)
 	}
 	if count == 0 {
-		return &mediaserverdbproto.DefaultResponse{
-			Status:  mediaserverdbproto.ResultStatus_NotFound,
+		return &pb.DefaultResponse{
+			Status:  pb.ResultStatus_NotFound,
 			Message: fmt.Sprintf("item %s/%s not found", c.Name, id.GetSignature()),
 			Data:    nil,
 		}, nil
 	}
-	return &mediaserverdbproto.DefaultResponse{
-		Status:  mediaserverdbproto.ResultStatus_OK,
+	return &pb.DefaultResponse{
+		Status:  pb.ResultStatus_OK,
 		Message: fmt.Sprintf("item %s/%s exists", c.Name, id.GetSignature()),
 		Data:    nil,
 	}, nil
 }
 
-func (d *mediaserverPG) Ping(context.Context, *emptypb.Empty) (*mediaserverdbproto.DefaultResponse, error) {
-	return &mediaserverdbproto.DefaultResponse{
-		Status:  mediaserverdbproto.ResultStatus_OK,
+func (d *mediaserverPG) Ping(context.Context, *emptypb.Empty) (*pb.DefaultResponse, error) {
+	return &pb.DefaultResponse{
+		Status:  pb.ResultStatus_OK,
 		Message: "pong",
 		Data:    nil,
 	}, nil
@@ -462,9 +462,9 @@ func (d *mediaserverPG) Ping(context.Context, *emptypb.Empty) (*mediaserverdbpro
 // overlapping of GetIngestItem calls must be prevented
 var getIngestItemMutex = &sync.Mutex{}
 
-func (d *mediaserverPG) GetIngestItem(context.Context, *emptypb.Empty) (*mediaserverdbproto.IngestItem, error) {
-	var result = &mediaserverdbproto.IngestItem{
-		Identifier: &mediaserverdbproto.ItemIdentifier{},
+func (d *mediaserverPG) GetIngestItem(context.Context, *emptypb.Empty) (*pb.IngestItem, error) {
+	var result = &pb.IngestItem{
+		Identifier: &pb.ItemIdentifier{},
 	}
 	getIngestItemMutex.Lock()
 	defer getIngestItemMutex.Unlock()
@@ -481,13 +481,13 @@ func (d *mediaserverPG) GetIngestItem(context.Context, *emptypb.Empty) (*mediase
 		return nil, status.Errorf(codes.Internal, "cannot get collection %s: %v", collectionid, err)
 	}
 	result.Identifier.Collection = c.Name
-	result.Collection = &mediaserverdbproto.Collection{
+	result.Collection = &pb.Collection{
 		Name:        c.Name,
 		Description: string(c.Description),
 		Secret:      string(c.Secret),
 		Public:      string(c.Public),
 		Jwtkey:      string(c.Jwtkey),
-		Storage: &mediaserverdbproto.Storage{
+		Storage: &pb.Storage{
 			Name:       c.Storage.Name,
 			Filebase:   c.Storage.Filebase,
 			Datadir:    c.Storage.Datadir,
@@ -495,26 +495,26 @@ func (d *mediaserverPG) GetIngestItem(context.Context, *emptypb.Empty) (*mediase
 			Tempdir:    c.Storage.Tempdir,
 		},
 	}
-	result.IngestType = mediaserverdbproto.IngestType_KEEP
+	result.IngestType = pb.IngestType_KEEP
 	var newstatus string
 	switch statusStr {
 	case "newcopy":
-		result.IngestType = mediaserverdbproto.IngestType_COPY
+		result.IngestType = pb.IngestType_COPY
 		newstatus = "indexingcopy"
 	case "newmove":
-		result.IngestType = mediaserverdbproto.IngestType_MOVE
+		result.IngestType = pb.IngestType_MOVE
 		newstatus = "indexingmove"
 	case "new":
-		result.IngestType = mediaserverdbproto.IngestType_KEEP
+		result.IngestType = pb.IngestType_KEEP
 		newstatus = "indexing"
 	case "indexingcopy":
-		result.IngestType = mediaserverdbproto.IngestType_COPY
+		result.IngestType = pb.IngestType_COPY
 		newstatus = "indexingcopy"
 	case "indexingmove":
-		result.IngestType = mediaserverdbproto.IngestType_MOVE
+		result.IngestType = pb.IngestType_MOVE
 		newstatus = "indexingmove"
 	case "indexing":
-		result.IngestType = mediaserverdbproto.IngestType_KEEP
+		result.IngestType = pb.IngestType_KEEP
 		newstatus = "indexing"
 	default:
 		return nil, status.Errorf(codes.Internal, "invalid status %s", statusStr)
@@ -527,7 +527,7 @@ func (d *mediaserverPG) GetIngestItem(context.Context, *emptypb.Empty) (*mediase
 	return result, nil
 }
 
-func (d *mediaserverPG) SetIngestItem(ctx context.Context, metadata *mediaserverdbproto.IngestMetadata) (*mediaserverdbproto.DefaultResponse, error) {
+func (d *mediaserverPG) SetIngestItem(ctx context.Context, metadata *pb.IngestMetadata) (*pb.DefaultResponse, error) {
 	if metadata == nil {
 		return nil, status.Errorf(codes.InvalidArgument, "metadata is nil")
 	}
@@ -552,13 +552,13 @@ func (d *mediaserverPG) SetIngestItem(ctx context.Context, metadata *mediaserver
 	defer tx.Rollback(ctx)
 	sqlStr := "UPDATE item SET type = $1, subtype = $2, objecttype = $3, mimetype = $4, error = $5, sha512 = $6, metadata = $7, last_modified = now(), status = $8 WHERE collectionid = $9 AND signature = $10"
 	params := []any{
-		metaItemMetadata.GetType(),
-		metaItemMetadata.GetSubtype(),
+		zeronull.Text(metaItemMetadata.GetType()),
+		zeronull.Text(metaItemMetadata.GetSubtype()),
 		metaItemMetadata.GetObjecttype(),
-		metaItemMetadata.GetMimetype(),
-		metaItemMetadata.GetError(),
-		metaItemMetadata.GetSha512(),
-		metaItemMetadata.GetMetadata(),
+		zeronull.Text(metaItemMetadata.GetMimetype()),
+		zeronull.Text(metaItemMetadata.GetError()),
+		zeronull.Text(metaItemMetadata.GetSha512()),
+		zeronull.Text(metaItemMetadata.GetMetadata()),
 		metadata.GetStatus(),
 		coll.Id,
 		metadata.GetItem().GetSignature(),
@@ -604,11 +604,11 @@ func (d *mediaserverPG) SetIngestItem(ctx context.Context, metadata *mediaserver
 		d.logger.Error().Err(err).Msg("cannot commit transaction")
 		return nil, status.Errorf(codes.Internal, "cannot commit transaction: %v", err)
 	}
-	return &mediaserverdbproto.DefaultResponse{
-		Status:  mediaserverdbproto.ResultStatus_OK,
+	return &pb.DefaultResponse{
+		Status:  pb.ResultStatus_OK,
 		Message: "item updated",
 		Data:    nil,
 	}, nil
 }
 
-var _ mediaserverdbproto.DBControllerServer = (*mediaserverPG)(nil)
+var _ pb.DBControllerServer = (*mediaserverPG)(nil)
