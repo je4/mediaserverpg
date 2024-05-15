@@ -20,7 +20,7 @@ import (
 	"time"
 )
 
-var customTypes = []string{"item_type", "item_objecttype"}
+var customTypes = []string{"item_type", "item_objecttype", "item_status"}
 var preparedStatements = map[string]string{
 	"getItemBySignature":  "SELECT id, collectionid, signature, urn, type, subtype, objecttype, mimetype, error, sha512, metadata, creation_date, last_modified, disabled, public, public_actions, status, parentid FROM item WHERE collectionid = $1 AND signature = $2",
 	"getStorageByID":      "SELECT id, name, filebase, datadir, subitemdir, tempdir FROM storage WHERE id = $1",
@@ -201,18 +201,10 @@ func (d *mediaserverPG) GetCollection(ctx context.Context, id *pb.CollectionIden
 	}, nil
 }
 
-/*
-func (d *mediaserverPG) GetCollections(context.Context, *pbgeneric.Page) (*pb.CollectionsResponse, error) {
-	// todo: add paging
-	result := &pb.Collections{
-		Collections: []*pb.Collection{},
-		NextPageToken: &pb.PageToken{
-			Data: "",
-		},
-	}
+func (d *mediaserverPG) GetCollections(empty *emptypb.Empty, result pb.DBController_GetCollectionsServer) error {
 	collections, err := getCollections(d.conn, d.logger)
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "cannot get collections: %v", err)
+		return status.Errorf(codes.Internal, "cannot get collections: %v", err)
 	}
 	for _, c := range collections {
 		s := &pb.Storage{
@@ -222,7 +214,7 @@ func (d *mediaserverPG) GetCollections(context.Context, *pbgeneric.Page) (*pb.Co
 			Subitemdir: c.Storage.Subitemdir,
 			Tempdir:    c.Storage.Tempdir,
 		}
-		result.Collections = append(result.Collections, &pb.Collection{
+		result.Send(&pb.Collection{
 			Name:        c.Name,
 			Description: string(c.Description),
 			Secret:      string(c.Secret),
@@ -231,10 +223,8 @@ func (d *mediaserverPG) GetCollections(context.Context, *pbgeneric.Page) (*pb.Co
 			Storage:     s,
 		})
 	}
-	return result, nil
+	return nil
 }
-
-*/
 
 func (d *mediaserverPG) CreateItem(ctx context.Context, item *pb.NewItem) (*pbgeneric.DefaultResponse, error) {
 	if item == nil {
@@ -479,6 +469,7 @@ func (d *mediaserverPG) GetIngestItem(context.Context, *emptypb.Empty) (*pb.Inge
 		if errors.Is(err, pgx.ErrNoRows) {
 			return nil, status.Errorf(codes.NotFound, "no ingest item found")
 		}
+		d.logger.Error().Err(err).Msgf("cannot get ingest item - %s", sqlStr)
 		return nil, status.Errorf(codes.Internal, "cannot get ingest item: %v", err)
 	}
 	c, err := d.getCollection(collectionid)
