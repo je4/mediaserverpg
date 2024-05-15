@@ -9,6 +9,7 @@ import (
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
+	pbgeneric "github.com/je4/genericproto/v2/pkg/generic/proto"
 	pb "github.com/je4/mediaserverproto/v2/pkg/mediaserverdb/proto"
 	"github.com/je4/utils/v2/pkg/zLogger"
 	"google.golang.org/grpc/codes"
@@ -199,7 +200,9 @@ func (d *mediaserverPG) GetCollection(ctx context.Context, id *pb.CollectionIden
 		Storage:     s,
 	}, nil
 }
-func (d *mediaserverPG) GetCollections(context.Context, *pb.PageToken) (*pb.Collections, error) {
+
+/*
+func (d *mediaserverPG) GetCollections(context.Context, *pbgeneric.Page) (*pb.CollectionsResponse, error) {
 	// todo: add paging
 	result := &pb.Collections{
 		Collections: []*pb.Collection{},
@@ -231,7 +234,9 @@ func (d *mediaserverPG) GetCollections(context.Context, *pb.PageToken) (*pb.Coll
 	return result, nil
 }
 
-func (d *mediaserverPG) CreateItem(ctx context.Context, item *pb.NewItem) (*pb.DefaultResponse, error) {
+*/
+
+func (d *mediaserverPG) CreateItem(ctx context.Context, item *pb.NewItem) (*pbgeneric.DefaultResponse, error) {
 	if item == nil {
 		return nil, status.Errorf(codes.InvalidArgument, "item is nil")
 	}
@@ -272,14 +277,14 @@ func (d *mediaserverPG) CreateItem(ctx context.Context, item *pb.NewItem) (*pb.D
 	if tag.RowsAffected() != 1 {
 		return nil, status.Errorf(codes.Internal, "inserted %d rows instead of 1", tag.RowsAffected())
 	}
-	return &pb.DefaultResponse{
-		Status:  pb.ResultStatus_OK,
+	return &pbgeneric.DefaultResponse{
+		Status:  pbgeneric.ResultStatus_OK,
 		Message: fmt.Sprintf("item %s/%s inserted", c.Name, item.GetIdentifier().GetSignature()),
 		Data:    nil,
 	}, nil
 }
 
-func (d *mediaserverPG) DeleteItem(ctx context.Context, id *pb.ItemIdentifier) (*pb.DefaultResponse, error) {
+func (d *mediaserverPG) DeleteItem(ctx context.Context, id *pb.ItemIdentifier) (*pbgeneric.DefaultResponse, error) {
 	if id == nil {
 		return nil, status.Errorf(codes.InvalidArgument, "item identifier is nil")
 	}
@@ -300,8 +305,8 @@ func (d *mediaserverPG) DeleteItem(ctx context.Context, id *pb.ItemIdentifier) (
 	if tag.RowsAffected() != 1 {
 		return nil, status.Errorf(codes.Internal, "deleted %d rows instead of 1", tag.RowsAffected())
 	}
-	return &pb.DefaultResponse{
-		Status:  pb.ResultStatus_OK,
+	return &pbgeneric.DefaultResponse{
+		Status:  pbgeneric.ResultStatus_OK,
 		Message: fmt.Sprintf("item %s/%s deleted", c.Name, id.GetSignature()),
 		Data:    nil,
 	}, nil
@@ -419,7 +424,7 @@ WHERE collectionid = $1 AND signature = $2`
 	return it, nil
 }
 
-func (d *mediaserverPG) ExistsItem(ctx context.Context, id *pb.ItemIdentifier) (*pb.DefaultResponse, error) {
+func (d *mediaserverPG) ExistsItem(ctx context.Context, id *pb.ItemIdentifier) (*pbgeneric.DefaultResponse, error) {
 	if id == nil {
 		return nil, status.Errorf(codes.InvalidArgument, "item identifier is nil")
 	}
@@ -438,22 +443,22 @@ func (d *mediaserverPG) ExistsItem(ctx context.Context, id *pb.ItemIdentifier) (
 		return nil, status.Errorf(codes.Internal, "cannot delete item %s [%v]: %v", sqlStr, params, err)
 	}
 	if count == 0 {
-		return &pb.DefaultResponse{
-			Status:  pb.ResultStatus_NotFound,
+		return &pbgeneric.DefaultResponse{
+			Status:  pbgeneric.ResultStatus_NotFound,
 			Message: fmt.Sprintf("item %s/%s not found", c.Name, id.GetSignature()),
 			Data:    nil,
 		}, nil
 	}
-	return &pb.DefaultResponse{
-		Status:  pb.ResultStatus_OK,
+	return &pbgeneric.DefaultResponse{
+		Status:  pbgeneric.ResultStatus_OK,
 		Message: fmt.Sprintf("item %s/%s exists", c.Name, id.GetSignature()),
 		Data:    nil,
 	}, nil
 }
 
-func (d *mediaserverPG) Ping(context.Context, *emptypb.Empty) (*pb.DefaultResponse, error) {
-	return &pb.DefaultResponse{
-		Status:  pb.ResultStatus_OK,
+func (d *mediaserverPG) Ping(context.Context, *emptypb.Empty) (*pbgeneric.DefaultResponse, error) {
+	return &pbgeneric.DefaultResponse{
+		Status:  pbgeneric.ResultStatus_OK,
 		Message: "pong",
 		Data:    nil,
 	}, nil
@@ -527,7 +532,7 @@ func (d *mediaserverPG) GetIngestItem(context.Context, *emptypb.Empty) (*pb.Inge
 	return result, nil
 }
 
-func (d *mediaserverPG) SetIngestItem(ctx context.Context, metadata *pb.IngestMetadata) (*pb.DefaultResponse, error) {
+func (d *mediaserverPG) SetIngestItem(ctx context.Context, metadata *pb.IngestMetadata) (*pbgeneric.DefaultResponse, error) {
 	if metadata == nil {
 		return nil, status.Errorf(codes.InvalidArgument, "metadata is nil")
 	}
@@ -604,8 +609,8 @@ func (d *mediaserverPG) SetIngestItem(ctx context.Context, metadata *pb.IngestMe
 		d.logger.Error().Err(err).Msg("cannot commit transaction")
 		return nil, status.Errorf(codes.Internal, "cannot commit transaction: %v", err)
 	}
-	return &pb.DefaultResponse{
-		Status:  pb.ResultStatus_OK,
+	return &pbgeneric.DefaultResponse{
+		Status:  pbgeneric.ResultStatus_OK,
 		Message: "item updated",
 		Data:    nil,
 	}, nil

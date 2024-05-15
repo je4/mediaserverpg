@@ -121,6 +121,7 @@ func main() {
 		logger.Fatal().Err(err).Msg("cannot create resolver client")
 	}
 	defer resolverCloser.Close()
+	grpchelper.RegisterResolver(resolver, time.Duration(conf.ResolverTimeout), time.Duration(conf.ResolverNotFoundTimeout), logger)
 
 	// create grpc server with resolver for name resolution
 	grpcServer, err := grpchelper.NewServer(conf.LocalAddr, serverTLSConfig, resolver, logger)
