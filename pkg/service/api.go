@@ -607,4 +607,56 @@ func (d *mediaserverPG) SetIngestItem(ctx context.Context, metadata *pb.IngestMe
 	}, nil
 }
 
+func (d *mediaserverPG) InsertCache(ctx context.Context, cache *pb.Cache) (*pbgeneric.DefaultResponse, error) {
+	if cache == nil {
+		return nil, status.Errorf(codes.InvalidArgument, "cache is nil")
+	}
+	identifier := cache.GetIdentifier()
+	coll, err := d.getCollection(identifier.GetCollection())
+	if err != nil {
+		d.logger.Error().Err(err).Msgf("cannot get collection %s", identifier.GetCollection())
+		return nil, status.Errorf(codes.Internal, "cannot get collection %s: %v", identifier.GetCollection(), err)
+	}
+	it, err := d.getItem(identifier.GetCollection(), identifier.GetSignature())
+	if err != nil {
+		d.logger.Error().Err(err).Msgf("cannot get item %s/%s", identifier.GetCollection(), identifier.GetSignature())
+		return nil, status.Errorf(codes.Internal, "cannot get item %s/%s: %v", identifier.GetCollection(), identifier.GetSignature(), err)
+	}
+	cacheMetadata := cache.GetMetadata()
+	st, err := d.getStorage(cacheMetadata.GetStorageName())
+	if err != nil {
+		d.logger.Error().Err(err).Msgf("cannot get storage %s", cacheMetadata.GetStorageName())
+		return nil, status.Errorf(codes.Internal, "cannot get storage %s: %v", cacheMetadata.GetStorageName(), err)
+	}
+	sqlStr := "INSERT INTO cache (collectionid, itemid, action, params, width, height, duration, mimetype, filesize, path, storageid) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)"
+	params := []any{
+		coll.Id,
+		it.Id,
+		cacheMetadata.GetAction(),
+		cacheMetadata.GetParams(),
+		cacheMetadata.GetWidth(),
+		cacheMetadata.GetHeight(),
+		cacheMetadata.GetDuration(),
+		cacheMetadata.GetMimeType(),
+		cacheMetadata.GetSize(),
+		cacheMetadata.GetPath(),
+		st.Id,
+	}
+	tag, err := d.conn.Exec(ctx, sqlStr, params...)
+	if err != nil {
+		d.logger.Error().Err(err).Msgf("cannot insert cache - '%s' - %v", sqlStr, params)
+		return nil, status.Errorf(codes.Internal, "cannot insert cache - '%s' - %v: %v", sqlStr, params, err)
+	}
+	if tag.RowsAffected() != 1 {
+		d.logger.Error().Msgf("inserted %d rows instead of 1", tag.RowsAffected())
+		return nil, status.Errorf(codes.Internal, "inserted %d rows instead of 1", tag.RowsAffected())
+	}
+	return &pbgeneric.DefaultResponse{
+		Status:  pbgeneric.ResultStatus_OK,
+		Message: "cache inserted",
+		Data:    nil,
+	}, nil
+
+}
+
 var _ pb.DBControllerServer = (*mediaserverPG)(nil)

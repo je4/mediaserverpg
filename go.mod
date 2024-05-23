@@ -9,13 +9,13 @@ require (
 	github.com/google/uuid v1.6.0
 	github.com/jackc/pgtype v1.14.0
 	github.com/jackc/pgx/v5 v5.5.4
-	github.com/je4/genericproto/v2 v2.0.1
-	github.com/je4/mediaserverproto/v2 v2.0.2
+	github.com/je4/genericproto/v2 v2.0.2
+	github.com/je4/mediaserverproto/v2 v2.0.4
 	github.com/je4/miniresolver/v2 v2.0.2
 	github.com/je4/trustutil/v2 v2.0.9
 	github.com/je4/utils/v2 v2.0.33
 	github.com/rs/zerolog v1.32.0
-	google.golang.org/grpc v1.63.2
+	google.golang.org/grpc v1.64.0
 	google.golang.org/protobuf v1.34.1
 )
 
@@ -31,10 +31,10 @@ require (
 	github.com/pkg/errors v0.9.1 // indirect
 	go.step.sm/crypto v0.43.1 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
-	golang.org/x/crypto v0.21.0 // indirect
-	golang.org/x/net v0.22.0 // indirect
+	golang.org/x/crypto v0.23.0 // indirect
+	golang.org/x/net v0.25.0 // indirect
 	golang.org/x/sync v0.6.0 // indirect
-	golang.org/x/sys v0.18.0 // indirect
-	golang.org/x/text v0.14.0 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20240318140521-94a12d6c2237 // indirect
+	golang.org/x/sys v0.20.0 // indirect
+	golang.org/x/text v0.15.0 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20240521202816-d264139d666e // indirect
 )
