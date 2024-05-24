@@ -22,11 +22,13 @@ import (
 
 var customTypes = []string{"item_type", "item_objecttype", "item_status"}
 var preparedStatements = map[string]string{
-	"getItemBySignature":  "SELECT id, collectionid, signature, urn, type, subtype, objecttype, mimetype, error, sha512, metadata, creation_date, last_modified, disabled, public, public_actions, status, parentid FROM item WHERE collectionid = $1 AND signature = $2",
-	"getStorageByID":      "SELECT id, name, filebase, datadir, subitemdir, tempdir FROM storage WHERE id = $1",
-	"getStorageByName":    "SELECT id, name, filebase, datadir, subitemdir, tempdir FROM storage WHERE name = $1",
-	"getCollectionByID":   "SELECT c.id, c.name, c.description, c.signature_prefix, c.secret, c.public, c.jwtkey, s.name AS storagename, s.filebase AS storageFilebase, s.datadir AS storageDatadir, s.subitemdir AS storageSubitemdir, s.tempdir AS storageTempdir, e.name AS estatename FROM collection c, storage s, estate e WHERE c.id = $1 AND c.storageid = s.id AND c.estateid = e.id",
-	"getCollectionByName": "SELECT c.id, c.name, c.description, c.signature_prefix, c.secret, c.public, c.jwtkey, s.name AS storagename, s.filebase AS storagefilebase, s.datadir AS storagedatadir, s.subitemdir AS storagesubitemdir, s.tempdir AS storagetempdir, e.name AS estatename FROM collection c, storage s, estate e WHERE c.name = $1 AND c.storageid = s.id AND c.estateid = e.id",
+	"getItemByCollectionSignature":  "SELECT i.id, i.collectionid, i.signature, i.urn, i.type, i.subtype, i.objecttype, i.mimetype, i.error, i.sha512, i.metadata, i.creation_date, i.last_modified, i.disabled, i.public, i.public_actions, i.status, i.parentid FROM item i, collection c WHERE c.name = $1 AND i.signature = $2 AND c.id=i.collectionid",
+	"getItemBySignature":            "SELECT id, collectionid, signature, urn, type, subtype, objecttype, mimetype, error, sha512, metadata, creation_date, last_modified, disabled, public, public_actions, status, parentid FROM item WHERE collectionid = $1 AND signature = $2",
+	"getStorageByID":                "SELECT id, name, filebase, datadir, subitemdir, tempdir FROM storage WHERE id = $1",
+	"getStorageByName":              "SELECT id, name, filebase, datadir, subitemdir, tempdir FROM storage WHERE name = $1",
+	"getCollectionByID":             "SELECT c.id, c.name, c.description, c.signature_prefix, c.secret, c.public, c.jwtkey, s.name AS storagename, s.filebase AS storageFilebase, s.datadir AS storageDatadir, s.subitemdir AS storageSubitemdir, s.tempdir AS storageTempdir, e.name AS estatename FROM collection c, storage s, estate e WHERE c.id = $1 AND c.storageid = s.id AND c.estateid = e.id",
+	"getCollectionByName":           "SELECT c.id, c.name, c.description, c.signature_prefix, c.secret, c.public, c.jwtkey, s.name AS storagename, s.filebase AS storagefilebase, s.datadir AS storagedatadir, s.subitemdir AS storagesubitemdir, s.tempdir AS storagetempdir, e.name AS estatename FROM collection c, storage s, estate e WHERE c.name = $1 AND c.storageid = s.id AND c.estateid = e.id",
+	"getCacheByCollectionSignature": "SELECT c.id, i.collectionid, i.id AS itemid, c.action, c.params, c.width, c.height, c.duration, c.mimetype, c.filesize, c.path, c.storageid FROM cache c, item i, collection col WHERE col.name = $1  AND i.signature = $2 AND c.action = $3 AND c.params = $4 AND i.collectionid=col.id AND c.itemid = i.id",
 }
 
 func AfterConnectFunc(ctx context.Context, conn *pgx.Conn, logger zLogger.ZLogger) error {
@@ -42,30 +44,6 @@ func AfterConnectFunc(ctx context.Context, conn *pgx.Conn, logger zLogger.ZLogge
 			return errors.Wrapf(err, "cannot prepare statement '%s' - '%s'", name, sql)
 		}
 	}
-	/*
-		getItemBySignatureSQL := "SELECT id, collectionid, signature, urn, type, subtype, objecttype, mimetype, error, sha512, metadata, creation_date, last_modified, disabled, public, public_actions, status, parentid FROM item WHERE collectionid = $1 AND signature = $2"
-		if _, err := conn.Prepare(ctx, "getItemBySignature", getItemBySignatureSQL); err != nil {
-			return errors.Wrapf(err, "cannot prepare statement '%s'", getItemBySignatureSQL)
-		}
-		getStorageByIDSQL := "SELECT id, name, filebase, datadir, subitemdir, tempdir FROM storage WHERE id = $1"
-		if _, err := conn.Prepare(ctx, "getStorageByID", getStorageByIDSQL); err != nil {
-			return errors.Wrapf(err, "cannot prepare statement '%s'", getStorageByIDSQL)
-		}
-		getStorageByNameSQL := "SELECT id, name, filebase, datadir, subitemdir, tempdir FROM storage WHERE name = $1"
-		if _, err := conn.Prepare(ctx, "getStorageByName", getStorageByNameSQL); err != nil {
-			return errors.Wrapf(err, "cannot prepare statement '%s'", getStorageByNameSQL)
-		}
-
-		getCollectionByIDSQL := "SELECT c.id, c.name, c.description, c.signature_prefix, c.secret, c.public, c.jwtkey, s.name AS storagename, s.filebase AS storageFilebase, s.datadir AS storageDatadir, s.subitemdir AS storageSubitemdir, s.tempdir AS storageTempdir, e.name AS estatename FROM collection c, storage s, estate e WHERE c.id = $1 AND c.storageid = s.id AND c.estateid = e.id"
-		if _, err := conn.Prepare(ctx, "getCollectionByID", getCollectionByIDSQL); err != nil {
-			logger.Panic().Err(err).Msg("cannot prepare statement")
-		}
-		getCollectionByNameSQL := "SELECT c.id, c.name, c.description, c.signature_prefix, c.secret, c.public, c.jwtkey, s.name AS storagename, s.filebase AS storagefilebase, s.datadir AS storagedatadir, s.subitemdir AS storagesubitemdir, s.tempdir AS storagetempdir, e.name AS estatename FROM collection c, storage s, estate e WHERE c.name = $1 AND c.storageid = s.id AND c.estateid = e.id"
-		if _, err := conn.Prepare(ctx, "getCollectionByName", getCollectionByNameSQL); err != nil {
-			logger.Panic().Err(err).Msg("cannot prepare statement")
-		}
-
-	*/
 
 	return nil
 }
@@ -76,6 +54,8 @@ func NewMediaserverPG(conn *pgxpool.Pool, logger zLogger.ZLogger) (*mediaserverP
 		logger:          logger,
 		storageCache:    gcache.New(100).Expiration(time.Minute * 10).LRU().LoaderFunc(getStorageLoader(conn, logger)).Build(),
 		collectionCache: gcache.New(200).Expiration(time.Minute * 10).LRU().LoaderFunc(getCollectionLoader(conn, logger)).Build(),
+		itemCache:       gcache.New(500).Expiration(time.Minute * 10).LRU().LoaderFunc(getItemLoader(conn, logger)).Build(),
+		cacheCache:      gcache.New(800).Expiration(time.Minute * 10).LRU().LoaderFunc(getCacheLoader(conn, logger)).Build(),
 	}, nil
 }
 
@@ -85,55 +65,23 @@ type mediaserverPG struct {
 	conn            *pgxpool.Pool
 	storageCache    gcache.Cache
 	collectionCache gcache.Cache
+	itemCache       gcache.Cache
+	cacheCache      gcache.Cache
 }
 
 func (d *mediaserverPG) getItem(collection, signature string) (*item, error) {
-	coll, err := d.getCollection(collection)
+	id := &ItemIdentifier{
+		Collection: collection,
+		Signature:  signature,
+	}
+	itemAny, err := d.itemCache.Get(id)
 	if err != nil {
-		return nil, errors.Wrapf(err, "cannot get collection %s", collection)
+		return nil, errors.Wrapf(err, "cannot get item %s/%s from cache", collection, signature)
 	}
-	i := &item{}
-	var parentID zeronull.Text
-	var _type zeronull.Text
-	var subtype zeronull.Text
-	var objecttype zeronull.Text
-	var mimetype zeronull.Text
-	var errorStr zeronull.Text
-	var sha512 zeronull.Text
-	var metadata zeronull.Text
-	var publicActions zeronull.Text
-	if err := d.conn.QueryRow(context.Background(), "getItemBySignature", coll.Id, signature).Scan(
-		&i.Id,
-		&i.Collectionid,
-		&i.Signature,
-		&i.Urn,
-		&_type,
-		&subtype,
-		&objecttype,
-		&mimetype,
-		&errorStr,
-		&sha512,
-		&metadata,
-		&i.CreationDate,
-		&i.LastModified,
-		&i.Disabled,
-		&i.Public,
-		&publicActions,
-		&i.Status,
-		&parentID,
-	); err != nil {
-		return nil, errors.Wrapf(err, "cannot get item %s/%s - %s", coll.Id, signature, "getItemBySignature")
+	i, ok := itemAny.(*item)
+	if !ok {
+		return nil, errors.Errorf("cannot cast type %T to *item", itemAny)
 	}
-	i.PartentId = string(parentID)
-	i.Type = string(_type)
-	i.Subtype = string(subtype)
-	i.Objecttype = string(objecttype)
-	i.Mimetype = string(mimetype)
-	i.Error = string(errorStr)
-	i.Sha512 = string(sha512)
-	i.Metadata = string(metadata)
-	i.PublicActions = string(publicActions)
-
 	return i, nil
 }
 
@@ -144,9 +92,58 @@ func (d *mediaserverPG) getStorage(id string) (*storage, error) {
 	}
 	s, ok := storageAny.(*storage)
 	if !ok {
-		return nil, errors.Errorf("cannot cast storage %v to *storage", storageAny)
+		return nil, errors.Errorf("cannot cast storage %T to *storage", storageAny)
 	}
 	return s, nil
+}
+
+func (d *mediaserverPG) GetCache(ctx context.Context, req *pb.CacheRequest) (*pb.Cache, error) {
+	itemId := req.GetIdentifier()
+	cacheAny, err := d.cacheCache.Get(&CacheIdentifier{
+		Collection: itemId.GetCollection(),
+		Signature:  itemId.GetSignature(),
+		Action:     req.GetAction(),
+		Params:     req.GetParams(),
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, status.Errorf(codes.NotFound, "cache %s/%s/%s/%s not found", itemId.GetCollection(), itemId.GetSignature(), req.GetAction(), req.GetParams())
+		}
+		return nil, status.Errorf(codes.Internal, "cannot get cache %s/%s/%s/%s from cache: %v", itemId.GetCollection(), itemId.GetSignature(), req.GetAction(), req.GetParams(), err)
+	}
+	c, ok := cacheAny.(*cache)
+	if !ok {
+		return nil, errors.Errorf("cannot cast cache %T to *cache", cacheAny)
+	}
+	storageName := ""
+	if c.StorageId != "" {
+		stor, err := d.getStorage(c.StorageId)
+		if err != nil {
+			return nil, errors.Wrapf(err, "cannot get storage %s", c.StorageId)
+		}
+		storageName = stor.Name
+	}
+	res := &pb.Cache{
+		Identifier: &pb.ItemIdentifier{
+			Collection: itemId.GetCollection(),
+			Signature:  itemId.GetSignature(),
+		},
+		Metadata: &pb.CacheMetadata{
+			Action:   c.Action,
+			Params:   c.Params,
+			Width:    int64(c.Width),
+			Height:   int64(c.Height),
+			Duration: int64(c.Duration),
+			Size:     int64(c.Filesize),
+			MimeType: c.Mimetype,
+			Path:     c.Path,
+		},
+	}
+	if storageName != "" {
+		res.Metadata.StorageName = &storageName
+	}
+	return res, nil
+
 }
 
 func (d *mediaserverPG) GetStorage(ctx context.Context, id *pb.StorageIdentifier) (*pb.Storage, error) {
