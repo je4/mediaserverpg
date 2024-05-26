@@ -42,6 +42,7 @@ func getCacheLoader(conn *pgxpool.Pool, logger zLogger.ZLogger) gcache.LoaderFun
 			Params: id.Params,
 		}
 		var path zeronull.Text
+		var params zeronull.Text
 		var storageid zeronull.Text
 		var width zeronull.Int8
 		var height zeronull.Int8
@@ -51,7 +52,7 @@ func getCacheLoader(conn *pgxpool.Pool, logger zLogger.ZLogger) gcache.LoaderFun
 			&c.CollectionId,
 			&c.ItemId,
 			&c.Action,
-			&c.Params,
+			&params,
 			&width,
 			&height,
 			&duration,
@@ -62,6 +63,7 @@ func getCacheLoader(conn *pgxpool.Pool, logger zLogger.ZLogger) gcache.LoaderFun
 		); err != nil {
 			return nil, errors.Wrapf(err, "cannot get cache %s/%s/%s/%s - %s", id.Collection, id.Signature, id.Action, id.Params, "getCacheByCollectionSignature")
 		}
+		c.Params = string(params)
 		c.Width = int(width)
 		c.Height = int(height)
 		c.Duration = int(duration)
