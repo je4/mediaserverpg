@@ -580,12 +580,12 @@ func (d *mediaserverPG) SetIngestItem(ctx context.Context, metadata *pb.IngestMe
 			coll.Id,
 			it.Id,
 			"item",
-			metaCacheMetadata.GetWidth(),
-			metaCacheMetadata.GetHeight(),
-			metaCacheMetadata.GetDuration(),
-			metaCacheMetadata.GetMimeType(),
+			zeronull.Int4(metaCacheMetadata.GetWidth()),
+			zeronull.Int4(metaCacheMetadata.GetHeight()),
+			zeronull.Int4(metaCacheMetadata.GetDuration()),
+			zeronull.Text(metaCacheMetadata.GetMimeType()),
 			metaCacheMetadata.GetSize(),
-			metaCacheMetadata.GetPath(),
+			zeronull.Text(metaCacheMetadata.GetPath()),
 			storageID,
 		}
 		if _, err := tx.Exec(ctx, sqlStr, params...); err != nil {
