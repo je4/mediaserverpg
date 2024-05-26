@@ -620,24 +620,36 @@ func (d *mediaserverPG) InsertCache(ctx context.Context, cache *pb.Cache) (*pbge
 		return nil, status.Errorf(codes.Internal, "cannot get item %s/%s: %v", identifier.GetCollection(), identifier.GetSignature(), err)
 	}
 	cacheMetadata := cache.GetMetadata()
-	st, err := d.getStorage(cacheMetadata.GetStorageName())
-	if err != nil {
-		d.logger.Error().Err(err).Msgf("cannot get storage %s", cacheMetadata.GetStorageName())
-		return nil, status.Errorf(codes.Internal, "cannot get storage %s: %v", cacheMetadata.GetStorageName(), err)
+	var storageid zeronull.Text
+	storageName := cacheMetadata.GetStorageName()
+	if storageName != "" {
+		st, err := d.getStorage(storageName)
+		if err != nil {
+			d.logger.Error().Err(err).Msgf("cannot get storage %s", cacheMetadata.GetStorageName())
+			return nil, status.Errorf(codes.Internal, "cannot get storage %s: %v", cacheMetadata.GetStorageName(), err)
+		}
+		storageid = zeronull.Text(st.Id)
 	}
+	var action zeronull.Text = zeronull.Text(cacheMetadata.GetAction())
+	var paramStr zeronull.Text = zeronull.Text(cacheMetadata.GetParams())
+	var width zeronull.Int4 = zeronull.Int4(cacheMetadata.GetWidth())
+	var height zeronull.Int4 = zeronull.Int4(cacheMetadata.GetHeight())
+	var duration zeronull.Int4 = zeronull.Int4(cacheMetadata.GetDuration())
+	var mimetype zeronull.Text = zeronull.Text(cacheMetadata.GetMimeType())
+	var path zeronull.Text = zeronull.Text(cacheMetadata.GetPath())
 	sqlStr := "INSERT INTO cache (collectionid, itemid, action, params, width, height, duration, mimetype, filesize, path, storageid) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)"
 	params := []any{
 		coll.Id,
 		it.Id,
-		cacheMetadata.GetAction(),
-		cacheMetadata.GetParams(),
-		cacheMetadata.GetWidth(),
-		cacheMetadata.GetHeight(),
-		cacheMetadata.GetDuration(),
-		cacheMetadata.GetMimeType(),
-		cacheMetadata.GetSize(),
-		cacheMetadata.GetPath(),
-		st.Id,
+		action,
+		paramStr,
+		width,
+		height,
+		duration,
+		mimetype,
+		cacheMetadata.GetSize(), // not null
+		path,
+		storageid,
 	}
 	tag, err := d.conn.Exec(ctx, sqlStr, params...)
 	if err != nil {
