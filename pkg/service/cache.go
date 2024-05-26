@@ -47,7 +47,16 @@ func getCacheLoader(conn *pgxpool.Pool, logger zLogger.ZLogger) gcache.LoaderFun
 		var width zeronull.Int8
 		var height zeronull.Int8
 		var duration zeronull.Int8
-		if err := conn.QueryRow(context.Background(), "getCacheByCollectionSignature", id.Collection, id.Signature, id.Action, id.Params).Scan(
+		var sql string
+		var sqlParams = []any{id.Collection, id.Signature, id.Action}
+		if id.Params == "" {
+			sql = "getCacheByCollectionSignatureNullParam"
+		} else {
+			sql = "getCacheByCollectionSignature"
+			sqlParams = append(sqlParams, id.Params)
+		}
+
+		if err := conn.QueryRow(context.Background(), sql, sqlParams...).Scan(
 			&c.Id,
 			&c.CollectionId,
 			&c.ItemId,

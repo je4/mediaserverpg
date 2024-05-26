@@ -14,21 +14,24 @@ import (
 	"github.com/je4/utils/v2/pkg/zLogger"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
-	"google.golang.org/protobuf/types/known/emptypb"
-	"google.golang.org/protobuf/types/known/timestamppb"
+	emptypb "google.golang.org/protobuf/types/known/emptypb"
+	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
+	wrapperspb "google.golang.org/protobuf/types/known/wrapperspb"
 	"sync"
 	"time"
 )
 
 var customTypes = []string{"item_type", "item_objecttype", "item_status"}
 var preparedStatements = map[string]string{
-	"getItemByCollectionSignature":  "SELECT i.id, i.collectionid, i.signature, i.urn, i.type, i.subtype, i.objecttype, i.mimetype, i.error, i.sha512, i.metadata, i.creation_date, i.last_modified, i.disabled, i.public, i.public_actions, i.status, i.parentid FROM item i, collection c WHERE c.name = $1 AND i.signature = $2 AND c.id=i.collectionid",
-	"getItemBySignature":            "SELECT id, collectionid, signature, urn, type, subtype, objecttype, mimetype, error, sha512, metadata, creation_date, last_modified, disabled, public, public_actions, status, parentid FROM item WHERE collectionid = $1 AND signature = $2",
-	"getStorageByID":                "SELECT id, name, filebase, datadir, subitemdir, tempdir FROM storage WHERE id = $1",
-	"getStorageByName":              "SELECT id, name, filebase, datadir, subitemdir, tempdir FROM storage WHERE name = $1",
-	"getCollectionByID":             "SELECT c.id, c.name, c.description, c.signature_prefix, c.secret, c.public, c.jwtkey, s.name AS storagename, s.filebase AS storageFilebase, s.datadir AS storageDatadir, s.subitemdir AS storageSubitemdir, s.tempdir AS storageTempdir, e.name AS estatename FROM collection c, storage s, estate e WHERE c.id = $1 AND c.storageid = s.id AND c.estateid = e.id",
-	"getCollectionByName":           "SELECT c.id, c.name, c.description, c.signature_prefix, c.secret, c.public, c.jwtkey, s.name AS storagename, s.filebase AS storagefilebase, s.datadir AS storagedatadir, s.subitemdir AS storagesubitemdir, s.tempdir AS storagetempdir, e.name AS estatename FROM collection c, storage s, estate e WHERE c.name = $1 AND c.storageid = s.id AND c.estateid = e.id",
-	"getCacheByCollectionSignature": "SELECT c.id, i.collectionid, i.id AS itemid, c.action, c.params, c.width, c.height, c.duration, c.mimetype, c.filesize, c.path, c.storageid FROM cache c, item i, collection col WHERE col.name = $1  AND i.signature = $2 AND c.action = $3 AND c.params = $4 AND i.collectionid=col.id AND c.itemid = i.id",
+	"getItemByCollectionSignature":           "SELECT i.id, i.collectionid, i.signature, i.urn, i.type, i.subtype, i.objecttype, i.mimetype, i.error, i.sha512, i.creation_date, i.last_modified, i.disabled, i.public, i.public_actions, i.status, i.parentid FROM item i, collection c WHERE c.name = $1 AND i.signature = $2 AND c.id=i.collectionid",
+	"getItemMetadataByCollectionSignature":   "SELECT i.metadata::text FROM item i, collection c WHERE c.name = $1 AND i.signature = $2 AND c.id=i.collectionid",
+	"getItemBySignature":                     "SELECT id, collectionid, signature, urn, type, subtype, objecttype, mimetype, error, sha512, creation_date, last_modified, disabled, public, public_actions, status, parentid FROM item WHERE collectionid = $1 AND signature = $2",
+	"getStorageByID":                         "SELECT id, name, filebase, datadir, subitemdir, tempdir FROM storage WHERE id = $1",
+	"getStorageByName":                       "SELECT id, name, filebase, datadir, subitemdir, tempdir FROM storage WHERE name = $1",
+	"getCollectionByID":                      "SELECT c.id, c.name, c.description, c.signature_prefix, c.secret, c.public, c.jwtkey, s.name AS storagename, s.filebase AS storageFilebase, s.datadir AS storageDatadir, s.subitemdir AS storageSubitemdir, s.tempdir AS storageTempdir, e.name AS estatename FROM collection c, storage s, estate e WHERE c.id = $1 AND c.storageid = s.id AND c.estateid = e.id",
+	"getCollectionByName":                    "SELECT c.id, c.name, c.description, c.signature_prefix, c.secret, c.public, c.jwtkey, s.name AS storagename, s.filebase AS storagefilebase, s.datadir AS storagedatadir, s.subitemdir AS storagesubitemdir, s.tempdir AS storagetempdir, e.name AS estatename FROM collection c, storage s, estate e WHERE c.name = $1 AND c.storageid = s.id AND c.estateid = e.id",
+	"getCacheByCollectionSignature":          "SELECT c.id, i.collectionid, i.id AS itemid, c.action, c.params, c.width, c.height, c.duration, c.mimetype, c.filesize, c.path, c.storageid FROM cache c, item i, collection col WHERE col.name = $1  AND i.signature = $2 AND c.action = $3 AND c.params = $4 AND i.collectionid=col.id AND c.itemid = i.id",
+	"getCacheByCollectionSignatureNullParam": "SELECT c.id, i.collectionid, i.id AS itemid, c.action, c.params, c.width, c.height, c.duration, c.mimetype, c.filesize, c.path, c.storageid FROM cache c, item i, collection col WHERE col.name = $1  AND i.signature = $2 AND c.action = $3 AND c.params is null AND i.collectionid=col.id AND c.itemid = i.id",
 }
 
 func AfterConnectFunc(ctx context.Context, conn *pgx.Conn, logger zLogger.ZLogger) error {
@@ -67,6 +70,14 @@ type mediaserverPG struct {
 	collectionCache gcache.Cache
 	itemCache       gcache.Cache
 	cacheCache      gcache.Cache
+}
+
+func (d *mediaserverPG) getItemMetadata(collection, signature string) (string, error) {
+	var metadata zeronull.Text
+	if err := d.conn.QueryRow(context.Background(), "getItemMetadataByCollectionSignature", collection, signature).Scan(&metadata); err != nil {
+		return "", errors.Wrapf(err, "error getting metadata for %s/%s", collection, signature)
+	}
+	return string(metadata), nil
 }
 
 func (d *mediaserverPG) getItem(collection, signature string) (*item, error) {
@@ -140,7 +151,21 @@ func (d *mediaserverPG) GetCache(ctx context.Context, req *pb.CacheRequest) (*pb
 		},
 	}
 	if storageName != "" {
-		res.Metadata.StorageName = &storageName
+		storAny, err := d.storageCache.Get(storageName)
+		if err != nil {
+			return nil, errors.Wrapf(err, "cannot get storage %s", storageName)
+		}
+		stor, ok := storAny.(*storage)
+		if !ok {
+			return nil, errors.Errorf("cannot cast storage %T to *storage", storAny)
+		}
+		res.Metadata.Storage = &pb.Storage{
+			Name:       stor.Name,
+			Filebase:   stor.Filebase,
+			Datadir:    stor.Datadir,
+			Subitemdir: stor.Subitemdir,
+			Tempdir:    stor.Tempdir,
+		}
 	}
 	return res, nil
 
@@ -299,113 +324,70 @@ func (d *mediaserverPG) DeleteItem(ctx context.Context, id *pb.ItemIdentifier) (
 	}, nil
 }
 
+func (d *mediaserverPG) GetItemMetadata(ctx context.Context, id *pb.ItemIdentifier) (*wrapperspb.StringValue, error) {
+	if id == nil {
+		return nil, status.Errorf(codes.InvalidArgument, "item identifier is nil")
+	}
+	metadata, err := d.getItemMetadata(id.GetCollection(), id.GetSignature())
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, status.Errorf(codes.NotFound, "item %s/%s not found", id.GetCollection(), id.GetSignature())
+		}
+		return nil, status.Errorf(codes.Internal, "cannot get metadata for %s/%s: %v", id.GetCollection(), id.GetSignature(), err)
+	}
+	return &wrapperspb.StringValue{
+		Value: metadata,
+	}, nil
+}
+
 func (d *mediaserverPG) GetItem(ctx context.Context, id *pb.ItemIdentifier) (*pb.Item, error) {
 	if id == nil {
 		return nil, status.Errorf(codes.InvalidArgument, "item identifier is nil")
 	}
-	c, err := d.getCollection(id.GetCollection())
+
+	_it, err := d.getItem(id.GetCollection(), id.GetSignature())
 	if err != nil {
-		return nil, status.Errorf(codes.Internal, "cannot get collection %s: %v", id.GetCollection(), err)
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, status.Errorf(codes.NotFound, "item %s/%s not found", id.GetCollection(), id.GetSignature())
+		}
+		return nil, status.Errorf(codes.Internal, "cannot get item %s/%s: %v", id.GetCollection(), id.GetSignature(), err)
 	}
-	var _type zeronull.Text
-	var subtype zeronull.Text
-	var mimetype zeronull.Text
-	var errorstr zeronull.Text
-	var sha512 zeronull.Text
-	var metadata zeronull.Text
-	var creation_date zeronull.Timestamp
-	var last_modified zeronull.Timestamp
-	var disabled bool
-	var public bool
-	var public_actions zeronull.Text
-	var statusStr string
-	var parentid zeronull.UUID
-	sqlStr := `SELECT 
-       urn,
-       type,
-       subtype,
-       objecttype,
-       mimetype,
-       error,
-       sha512,
-       metadata,
-       creation_date,
-       last_modified,
-       disabled,
-       public,
-       public_actions,
-       status,
-       parentid
-FROM item 
-WHERE collectionid = $1 AND signature = $2`
-	params := []any{
-		c.Id, id.GetSignature(),
-	}
+
 	var it = &pb.Item{
 		Identifier: &pb.ItemIdentifier{
 			Collection: id.GetCollection(),
 			Signature:  id.GetSignature(),
 		},
-		Metadata: &pb.ItemMetadata{},
+		Metadata: &pb.ItemMetadata{
+			Type:       &_it.Type,
+			Subtype:    &_it.Subtype,
+			Mimetype:   &_it.Mimetype,
+			Objecttype: &_it.Objecttype,
+			Sha512:     &_it.Sha512,
+		},
+		Status: _it.Status,
 	}
-	if err := d.conn.QueryRow(context.Background(),
-		sqlStr,
-		params...).Scan(
-		&it.Urn,
-		&_type,
-		&subtype,
-		&it.Metadata.Objecttype,
-		&mimetype,
-		&errorstr,
-		&sha512,
-		&metadata,
-		&creation_date,
-		&last_modified,
-		&disabled,
-		&public,
-		&public_actions,
-		&statusStr,
-		&parentid,
-	); err != nil {
-		return nil, status.Errorf(codes.Internal, "cannot get item %s [%v]: %v", sqlStr, params, err)
+	if _it.Error != "" {
+		it.Error = &_it.Error
 	}
-	if _type != "" {
-		it.Metadata.Type = (*string)(&_type)
+	if !_it.CreationDate.IsZero() {
+		it.Created = timestamppb.New(_it.CreationDate)
 	}
-	if subtype != "" {
-		it.Metadata.Subtype = (*string)(&subtype)
+	if !_it.LastModified.IsZero() {
+		it.Updated = timestamppb.New(_it.LastModified)
 	}
-	if mimetype != "" {
-		it.Metadata.Mimetype = (*string)(&mimetype)
+	it.Disabled = _it.Disabled
+	it.Public = _it.Public
+	if _it.PublicActions != "" {
+		it.PublicActions = ([]byte)(_it.PublicActions)
 	}
-	if errorstr != "" {
-		it.Metadata.Error = (*string)(&errorstr)
-	}
-	if sha512 != "" {
-		it.Metadata.Sha512 = (*string)(&sha512)
-	}
-	if metadata != "" {
-		it.Metadata.Metadata = ([]byte)(metadata)
-	}
-	if !time.Time(creation_date).IsZero() {
-		it.Created = timestamppb.New(time.Time(creation_date))
-	}
-	if !time.Time(last_modified).IsZero() {
-		it.Updated = timestamppb.New(time.Time(last_modified))
-	}
-	it.Disabled = disabled
-	it.Public = public
-	if public_actions != "" {
-		it.PublicActions = ([]byte)(public_actions)
-	}
-	it.Status = statusStr
-	if parentid[0] != 0 {
-		sqlStr = `SELECT collectionid, signature FROM item WHERE id = $1`
-		params = []any{
-			parentid,
-		}
-		if err := d.conn.QueryRow(context.Background(), sqlStr, params...).Scan(&it.Parent.Collection, &it.Parent.Signature); err != nil {
-			return nil, status.Errorf(codes.Internal, "cannot get parent item %s [%v]: %v", sqlStr, params, err)
+	if _it.PartentId != "" {
+		sqlStr := `SELECT collectionid, signature FROM item WHERE id = $1`
+		if err := d.conn.QueryRow(context.Background(), sqlStr, _it.PartentId).Scan(&it.Parent.Collection, &it.Parent.Signature); err != nil {
+			if errors.Is(err, pgx.ErrNoRows) {
+				return nil, status.Errorf(codes.NotFound, "parent item %s not found", _it.PartentId)
+			}
+			return nil, status.Errorf(codes.Internal, "cannot get parent item %s [%s]: %v", sqlStr, _it.PartentId, err)
 		}
 	}
 	return it, nil
@@ -549,9 +531,9 @@ func (d *mediaserverPG) SetIngestItem(ctx context.Context, metadata *pb.IngestMe
 		zeronull.Text(metaItemMetadata.GetSubtype()),
 		metaItemMetadata.GetObjecttype(),
 		zeronull.Text(metaItemMetadata.GetMimetype()),
-		zeronull.Text(metaItemMetadata.GetError()),
+		zeronull.Text(metadata.GetError()),
 		zeronull.Text(metaItemMetadata.GetSha512()),
-		zeronull.Text(metaItemMetadata.GetMetadata()),
+		zeronull.Text(metadata.GetFullMetadata()),
 		metadata.GetStatus(),
 		coll.Id,
 		metadata.GetItem().GetSignature(),
@@ -567,13 +549,14 @@ func (d *mediaserverPG) SetIngestItem(ctx context.Context, metadata *pb.IngestMe
 			return nil, status.Errorf(codes.Internal, "cannot get item %s/%s: %v", metadata.GetItem().GetCollection(), metadata.GetItem().GetSignature(), err)
 		}
 		var storageID zeronull.Text
-		if metaCacheMetadata.GetStorageName() != "" {
-			stor, err := d.getStorage(metaCacheMetadata.GetStorageName())
+		if metaCacheMetadata.GetStorage() != nil {
+			stor := metaCacheMetadata.GetStorage()
+			storInt, err := d.getStorage(stor.GetName())
 			if err != nil {
-				d.logger.Error().Err(err).Msgf("cannot get storage %s", coll.Storage.Name)
-				return nil, status.Errorf(codes.Internal, "cannot get storage %s: %v", coll.Storage.Name, err)
+				d.logger.Error().Err(err).Msgf("cannot get storage %s", stor.GetName())
+				return nil, status.Errorf(codes.Internal, "cannot get storage %s: %v", stor.GetName(), err)
 			}
-			storageID = zeronull.Text(stor.Id)
+			storageID = zeronull.Text(storInt.Id)
 		}
 		sqlStr = "INSERT INTO cache (collectionid, itemid, action, width, height, duration, mimetype, filesize, path, storageid) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)"
 		params = []any{
@@ -621,12 +604,12 @@ func (d *mediaserverPG) InsertCache(ctx context.Context, cache *pb.Cache) (*pbge
 	}
 	cacheMetadata := cache.GetMetadata()
 	var storageid zeronull.Text
-	storageName := cacheMetadata.GetStorageName()
-	if storageName != "" {
-		st, err := d.getStorage(storageName)
+	stor := cacheMetadata.GetStorage()
+	if stor != nil {
+		st, err := d.getStorage(stor.GetName())
 		if err != nil {
-			d.logger.Error().Err(err).Msgf("cannot get storage %s", cacheMetadata.GetStorageName())
-			return nil, status.Errorf(codes.Internal, "cannot get storage %s: %v", cacheMetadata.GetStorageName(), err)
+			d.logger.Error().Err(err).Msgf("cannot get storage %s", stor.GetName())
+			return nil, status.Errorf(codes.Internal, "cannot get storage %s: %v", stor.GetName(), err)
 		}
 		storageid = zeronull.Text(st.Id)
 	}

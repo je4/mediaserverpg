@@ -27,6 +27,18 @@ import (
 
 var cfg = flag.String("config", "", "location of toml configuration file")
 
+type queryTracer struct {
+	log zLogger.ZLogger
+}
+
+func (tracer *queryTracer) TraceQueryStart(ctx context.Context, _ *pgx.Conn, data pgx.TraceQueryStartData) context.Context {
+	tracer.log.Debug().Msgf("postgreSQL command '%s' - %v", data.SQL, data.Args)
+	return ctx
+}
+
+func (tracer *queryTracer) TraceQueryEnd(ctx context.Context, conn *pgx.Conn, data pgx.TraceQueryEndData) {
+}
+
 func main() {
 	flag.Parse()
 	var cfgFS fs.FS
@@ -71,6 +83,10 @@ func main() {
 	// create prepared queries on each connection
 	pgxConf.AfterConnect = func(ctx context.Context, conn *pgx.Conn) error {
 		return service.AfterConnectFunc(ctx, conn, logger)
+	}
+	pgxConf.BeforeConnect = func(ctx context.Context, cfg *pgx.ConnConfig) error {
+		cfg.Tracer = &queryTracer{log: logger}
+		return nil
 	}
 	var conn *pgxpool.Pool
 	connCount := 0

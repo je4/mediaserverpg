@@ -20,7 +20,6 @@ type item struct {
 	Mimetype      string
 	Error         string
 	Sha512        string
-	Metadata      string
 	CreationDate  time.Time
 	LastModified  time.Time
 	Disabled      bool
@@ -50,7 +49,6 @@ func getItemLoader(conn *pgxpool.Pool, logger zLogger.ZLogger) gcache.LoaderFunc
 		var mimetype zeronull.Text
 		var errorStr zeronull.Text
 		var sha512 zeronull.Text
-		var metadata zeronull.Text
 		var publicActions zeronull.Text
 		if err := conn.QueryRow(context.Background(), "getItemByCollectionSignature", id.Collection, id.Signature).Scan(
 			&i.Id,
@@ -63,7 +61,6 @@ func getItemLoader(conn *pgxpool.Pool, logger zLogger.ZLogger) gcache.LoaderFunc
 			&mimetype,
 			&errorStr,
 			&sha512,
-			&metadata,
 			&i.CreationDate,
 			&i.LastModified,
 			&i.Disabled,
@@ -81,7 +78,6 @@ func getItemLoader(conn *pgxpool.Pool, logger zLogger.ZLogger) gcache.LoaderFunc
 		i.Mimetype = string(mimetype)
 		i.Error = string(errorStr)
 		i.Sha512 = string(sha512)
-		i.Metadata = string(metadata)
 		i.PublicActions = string(publicActions)
 
 		return i, nil
