@@ -52,9 +52,10 @@ func AfterConnectFunc(ctx context.Context, conn *pgx.Conn, logger zLogger.ZLogge
 }
 
 func NewMediaserverPG(conn *pgxpool.Pool, logger zLogger.ZLogger) (*mediaserverPG, error) {
+	_logger := logger.With().Str("rpcService", "mediaserverPG").Logger()
 	return &mediaserverPG{
 		conn:            conn,
-		logger:          logger,
+		logger:          &_logger,
 		storageCache:    gcache.New(100).Expiration(time.Minute * 10).LRU().LoaderFunc(getStorageLoader(conn, logger)).Build(),
 		collectionCache: gcache.New(200).Expiration(time.Minute * 10).LRU().LoaderFunc(getCollectionLoader(conn, logger)).Build(),
 		itemCache:       gcache.New(500).Expiration(time.Minute * 10).LRU().LoaderFunc(getItemLoader(conn, logger)).Build(),
@@ -106,6 +107,46 @@ func (d *mediaserverPG) getStorage(id string) (*storage, error) {
 		return nil, errors.Errorf("cannot cast storage %T to *storage", storageAny)
 	}
 	return s, nil
+}
+
+func (d *mediaserverPG) DeleteCache(ctx context.Context, req *pb.CacheRequest) (*pbgeneric.DefaultResponse, error) {
+	itemId := req.GetIdentifier()
+	cacheId := &CacheIdentifier{
+		Collection: itemId.GetCollection(),
+		Signature:  itemId.GetSignature(),
+		Action:     req.GetAction(),
+		Params:     req.GetParams(),
+	}
+	cacheAny, err := d.cacheCache.Get(cacheId)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, status.Errorf(codes.NotFound, "cache %s/%s/%s/%s not found", itemId.GetCollection(), itemId.GetSignature(), req.GetAction(), req.GetParams())
+		}
+		return nil, status.Errorf(codes.Internal, "cannot get cache %s/%s/%s/%s from cache: %v", itemId.GetCollection(), itemId.GetSignature(), req.GetAction(), req.GetParams(), err)
+	}
+	c, ok := cacheAny.(*cache)
+	if !ok {
+		return nil, errors.Errorf("cannot cast cache %T to *cache", cacheAny)
+	}
+	sqlStr := "DELETE FROM cache WHERE id = $1"
+	params := []any{
+		c.Id,
+	}
+	tag, err := d.conn.Exec(context.Background(),
+		sqlStr,
+		params...)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "cannot delete cache %s [%v]: %v", sqlStr, params, err)
+	}
+	if tag.RowsAffected() != 1 {
+		return nil, status.Errorf(codes.Internal, "deleted %d rows instead of 1", tag.RowsAffected())
+	}
+	d.cacheCache.Remove(cacheId)
+	return &pbgeneric.DefaultResponse{
+		Status:  pbgeneric.ResultStatus_OK,
+		Message: fmt.Sprintf("cache %s/%s/%s/%s deleted", itemId.GetCollection(), itemId.GetSignature(), req.GetAction(), req.GetParams()),
+		Data:    nil,
+	}, nil
 }
 
 func (d *mediaserverPG) GetCache(ctx context.Context, req *pb.CacheRequest) (*pb.Cache, error) {
