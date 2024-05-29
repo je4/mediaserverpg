@@ -11,7 +11,7 @@ require (
 	github.com/jackc/pgx/v5 v5.6.0
 	github.com/je4/genericproto/v2 v2.0.3
 	github.com/je4/mediaserverproto/v2 v2.0.23
-	github.com/je4/miniresolver/v2 v2.0.5
+	github.com/je4/miniresolver/v2 v2.0.6
 	github.com/je4/trustutil/v2 v2.0.9
 	github.com/je4/utils/v2 v2.0.37
 	github.com/rs/zerolog v1.33.0
