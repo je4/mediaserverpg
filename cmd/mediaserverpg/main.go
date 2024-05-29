@@ -8,9 +8,8 @@ import (
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/je4/mediaserverpg/v2/configs"
 	"github.com/je4/mediaserverpg/v2/pkg/service"
-	pb "github.com/je4/mediaserverproto/v2/pkg/mediaserverdb/proto"
-	resolverclient "github.com/je4/miniresolver/v2/pkg/client"
-	"github.com/je4/miniresolver/v2/pkg/grpchelper"
+	mediaserverproto "github.com/je4/mediaserverproto/v2/pkg/mediaserver/proto"
+	"github.com/je4/miniresolver/v2/pkg/resolver"
 	"github.com/je4/trustutil/v2/pkg/certutil"
 	"github.com/je4/trustutil/v2/pkg/loader"
 	"github.com/je4/utils/v2/pkg/zLogger"
@@ -112,14 +111,14 @@ func main() {
 	}
 	defer conn.Close()
 
-	srv, err := service.NewMediaserverPG(conn, logger)
+	srv, err := service.NewMediaserverDatabasePG(conn, logger)
 	if err != nil {
 		logger.Fatal().Err(err).Msg("cannot create service")
 	}
 
 	// create TLS Certificate.
 	// the certificate MUST contain <package>.<service> as DNS name
-	certutil.AddDefaultDNSNames(grpchelper.GetService(pb.DBController_Ping_FullMethodName))
+	certutil.AddDefaultDNSNames(mediaserverproto.Database_ServiceDesc.ServiceName)
 	serverTLSConfig, serverLoader, err := loader.CreateServerLoader(true, &conf.ServerTLS, nil, logger)
 	if err != nil {
 		logger.Fatal().Err(err).Msg("cannot create server loader")
@@ -135,20 +134,20 @@ func main() {
 	defer clientLoader.Close()
 
 	// create resolver client
-	resolver, resolverCloser, err := resolverclient.CreateClient(conf.ResolverAddr, clientTLSConfig)
+
+	resolverClient, err := resolver.NewMiniresolverClient(conf.ResolverAddr, conf.GRPCClient, clientTLSConfig, serverTLSConfig, time.Duration(conf.ResolverTimeout), time.Duration(conf.ResolverNotFoundTimeout), logger)
 	if err != nil {
 		logger.Fatal().Err(err).Msg("cannot create resolver client")
 	}
-	defer resolverCloser.Close()
-	grpchelper.RegisterResolver(resolver, time.Duration(conf.ResolverTimeout), time.Duration(conf.ResolverNotFoundTimeout), logger)
+	defer resolverClient.Close()
 
 	// create grpc server with resolver for name resolution
-	grpcServer, err := grpchelper.NewServer(conf.LocalAddr, serverTLSConfig, resolver, logger)
+	grpcServer, err := resolver.NewServer(resolverClient, conf.LocalAddr)
 	if err != nil {
 		logger.Fatal().Err(err).Msg("cannot create server")
 	}
 	// register the server
-	pb.RegisterDBControllerServer(grpcServer, srv)
+	mediaserverproto.RegisterDatabaseServer(grpcServer, srv)
 
 	grpcServer.Startup()
 

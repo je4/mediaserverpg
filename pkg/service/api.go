@@ -10,7 +10,7 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/jackc/pgx/v5/pgxpool"
 	pbgeneric "github.com/je4/genericproto/v2/pkg/generic/proto"
-	pb "github.com/je4/mediaserverproto/v2/pkg/mediaserverdb/proto"
+	pb "github.com/je4/mediaserverproto/v2/pkg/mediaserver/proto"
 	"github.com/je4/utils/v2/pkg/zLogger"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -51,7 +51,7 @@ func AfterConnectFunc(ctx context.Context, conn *pgx.Conn, logger zLogger.ZLogge
 	return nil
 }
 
-func NewMediaserverPG(conn *pgxpool.Pool, logger zLogger.ZLogger) (*mediaserverPG, error) {
+func NewMediaserverDatabasePG(conn *pgxpool.Pool, logger zLogger.ZLogger) (*mediaserverPG, error) {
 	_logger := logger.With().Str("rpcService", "mediaserverPG").Logger()
 	return &mediaserverPG{
 		conn:            conn,
@@ -64,7 +64,7 @@ func NewMediaserverPG(conn *pgxpool.Pool, logger zLogger.ZLogger) (*mediaserverP
 }
 
 type mediaserverPG struct {
-	pb.UnimplementedDBControllerServer
+	pb.UnimplementedDatabaseServer
 	logger          zLogger.ZLogger
 	conn            *pgxpool.Pool
 	storageCache    gcache.Cache
@@ -264,7 +264,7 @@ func (d *mediaserverPG) GetCollection(ctx context.Context, id *pb.CollectionIden
 	}, nil
 }
 
-func (d *mediaserverPG) GetCollections(empty *emptypb.Empty, result pb.DBController_GetCollectionsServer) error {
+func (d *mediaserverPG) GetCollections(empty *emptypb.Empty, result pb.Database_GetCollectionsServer) error {
 	collections, err := getCollections(d.conn, d.logger)
 	if err != nil {
 		return status.Errorf(codes.Internal, "cannot get collections: %v", err)
@@ -692,4 +692,4 @@ func (d *mediaserverPG) InsertCache(ctx context.Context, cache *pb.Cache) (*pbge
 
 }
 
-var _ pb.DBControllerServer = (*mediaserverPG)(nil)
+var _ pb.DatabaseServer = (*mediaserverPG)(nil)
