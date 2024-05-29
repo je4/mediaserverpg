@@ -3,23 +3,23 @@ package main
 import (
 	"emperror.dev/errors"
 	"github.com/BurntSushi/toml"
-	"github.com/je4/trustutil/v2/pkg/loader"
+	loaderConfig "github.com/je4/trustutil/v2/pkg/config"
 	"github.com/je4/utils/v2/pkg/config"
+	"github.com/je4/utils/v2/pkg/zLogger"
 	"io/fs"
 	"os"
 )
 
 type MediaserverPGConfig struct {
-	LocalAddr               string            `toml:"localaddr"`
-	ResolverAddr            string            `toml:"resolveraddr"`
-	ResolverTimeout         config.Duration   `toml:"resolvertimeout"`
-	ResolverNotFoundTimeout config.Duration   `toml:"resolvernotfoundtimeout"`
-	GRPCClient              map[string]string `toml:"grpcclient"`
-	ServerTLS               loader.TLSConfig  `toml:"servertls"`
-	ClientTLS               loader.TLSConfig  `toml:"clienttls"`
-	LogFile                 string            `toml:"logfile"`
-	LogLevel                string            `toml:"loglevel"`
-	DBConn                  config.EnvString  `toml:"dbconn"`
+	LocalAddr               string                 `toml:"localaddr"`
+	ResolverAddr            string                 `toml:"resolveraddr"`
+	ResolverTimeout         config.Duration        `toml:"resolvertimeout"`
+	ResolverNotFoundTimeout config.Duration        `toml:"resolvernotfoundtimeout"`
+	GRPCClient              map[string]string      `toml:"grpcclient"`
+	ServerTLS               loaderConfig.TLSConfig `toml:"servertls"`
+	ClientTLS               loaderConfig.TLSConfig `toml:"clienttls"`
+	DBConn                  config.EnvString       `toml:"dbconn"`
+	Log                     zLogger.Config         `toml:"log"`
 }
 
 func LoadMediaserverPGConfig(fSys fs.FS, fp string, conf *MediaserverPGConfig) error {

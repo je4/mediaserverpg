@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"crypto/tls"
 	"flag"
 	"fmt"
 	"github.com/jackc/pgx/v5"
@@ -14,6 +15,7 @@ import (
 	"github.com/je4/trustutil/v2/pkg/loader"
 	"github.com/je4/utils/v2/pkg/zLogger"
 	"github.com/rs/zerolog"
+	ublogger "gitlab.switch.ch/ub-unibas/go-ublogger"
 	"io"
 	"io/fs"
 	"log"
@@ -31,11 +33,20 @@ type queryTracer struct {
 }
 
 func (tracer *queryTracer) TraceQueryStart(ctx context.Context, _ *pgx.Conn, data pgx.TraceQueryStartData) context.Context {
-	tracer.log.Debug().Msgf("postgreSQL command '%s' - %v", data.SQL, data.Args)
+	tracer.log.Debug().Msgf("postgreSQL command start '%s' - %v", data.SQL, data.Args)
 	return ctx
 }
 
 func (tracer *queryTracer) TraceQueryEnd(ctx context.Context, conn *pgx.Conn, data pgx.TraceQueryEndData) {
+	if data.Err != nil {
+		tracer.log.Error().Err(data.Err).Msgf("postgreSQL command error")
+		return
+	}
+	tracer.log.Debug().Msgf("postgreSQL command end: %s (%d)", data.CommandTag.String(), data.CommandTag.RowsAffected())
+}
+
+type testlogger struct {
+	*zerolog.Logger
 }
 
 func main() {
@@ -51,29 +62,41 @@ func main() {
 	}
 	conf := &MediaserverPGConfig{
 		LocalAddr: "localhost:8443",
-		LogLevel:  "DEBUG",
 	}
 	if err := LoadMediaserverPGConfig(cfgFS, cfgFile, conf); err != nil {
 		log.Fatalf("cannot load toml from [%v] %s: %v", cfgFS, cfgFile, err)
 	}
 	// create logger instance
-	var out io.Writer = os.Stdout
-	if conf.LogFile != "" {
-		fp, err := os.OpenFile(conf.LogFile, os.O_RDWR|os.O_CREATE|os.O_APPEND, 0644)
-		if err != nil {
-			log.Fatalf("cannot open logfile %s: %v", conf.LogFile, err)
-		}
-		defer fp.Close()
-		out = fp
-	}
 	hostname, err := os.Hostname()
 	if err != nil {
 		log.Fatalf("cannot get hostname: %v", err)
 	}
-	output := zerolog.ConsoleWriter{Out: out, TimeFormat: time.RFC3339}
-	_logger := zerolog.New(output).With().Timestamp().Str("service", "mediaserverpg"). /*.Array("addrs", zLogger.StringArray(addrStr))*/ Str("host", hostname).Str("addr", conf.LocalAddr).Logger()
-	_logger.Level(zLogger.LogLevel(conf.LogLevel))
-	var logger zLogger.ZLogger = &_logger
+
+	var loggerTLSConfig *tls.Config
+	var loggerLoader io.Closer
+	if conf.Log.Stash.TLS != nil {
+		loggerTLSConfig, loggerLoader, err = loader.CreateClientLoader(conf.Log.Stash.TLS, nil)
+		if err != nil {
+			log.Fatalf("cannot create client loader: %v", err)
+		}
+		defer loggerLoader.Close()
+	}
+
+	_logger, _logstash, _logfile := ublogger.CreateUbMultiLoggerTLS(conf.Log.Level, conf.Log.File,
+		ublogger.SetDataset(conf.Log.Stash.Dataset),
+		ublogger.SetLogStash(conf.Log.Stash.LogstashHost, conf.Log.Stash.LogstashPort, conf.Log.Stash.Namespace, conf.Log.Stash.LogstashTraceLevel),
+		ublogger.SetTLS(conf.Log.Stash.TLS != nil),
+		ublogger.SetTLSConfig(loggerTLSConfig),
+	)
+	if _logstash != nil {
+		defer _logstash.Close()
+	}
+	if _logfile != nil {
+		defer _logfile.Close()
+	}
+
+	l2 := _logger.With().Str("host", hostname).Str("addr", conf.LocalAddr).Logger() //.Output(output)
+	var logger zLogger.ZLogger = &l2
 	//	var dbLogger = zerologadapter.NewLogger(_logger)
 
 	//logger.Info().Msgf("connecting to database: %s", conf.DBConn)
@@ -91,23 +114,11 @@ func main() {
 		return nil
 	}
 	var conn *pgxpool.Pool
-	connCount := 0
-	for {
-		connCount++
-		logger.Info().Msgf("connecting to database: %s (try %d)", conf.DBConn, connCount)
-		conn, err = pgxpool.NewWithConfig(context.Background(), pgxConf)
-		//conn, err = pgx.ConnectConfig(context.Background(), pgxConf)
-		if err != nil {
-			logger.Error().Err(err).Msgf("cannot connect to database: %s", conf.DBConn)
-		}
-		if err == nil {
-			break
-		}
-		if connCount > 12 {
-			logger.Fatal().Err(err).Msgf("cannot connect to database: %s", conf.DBConn)
-		}
-		logger.Info().Msgf("retrying in 5 seconds")
-		time.Sleep(5 * time.Second)
+	logger.Info().Msgf("connecting to database: %s", conf.DBConn)
+	conn, err = pgxpool.NewWithConfig(context.Background(), pgxConf)
+	//conn, err = pgx.ConnectConfig(context.Background(), pgxConf)
+	if err != nil {
+		logger.Fatal().Err(err).Msgf("cannot connect to database: %s", conf.DBConn)
 	}
 	defer conn.Close()
 
