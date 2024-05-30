@@ -97,9 +97,7 @@ func main() {
 
 	l2 := _logger.With().Str("host", hostname).Str("addr", conf.LocalAddr).Logger() //.Output(output)
 	var logger zLogger.ZLogger = &l2
-	//	var dbLogger = zerologadapter.NewLogger(_logger)
 
-	//logger.Info().Msgf("connecting to database: %s", conf.DBConn)
 	pgxConf, err := pgxpool.ParseConfig(string(conf.DBConn))
 	if err != nil {
 		logger.Fatal().Err(err).Msg("cannot parse db connection string")

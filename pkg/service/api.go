@@ -32,6 +32,20 @@ var preparedStatements = map[string]string{
 	"getCollectionByName":                    "SELECT c.id, c.name, c.description, c.signature_prefix, c.secret, c.public, c.jwtkey, s.name AS storagename, s.filebase AS storagefilebase, s.datadir AS storagedatadir, s.subitemdir AS storagesubitemdir, s.tempdir AS storagetempdir, e.name AS estatename FROM collection c, storage s, estate e WHERE c.name = $1 AND c.storageid = s.id AND c.estateid = e.id",
 	"getCacheByCollectionSignature":          "SELECT c.id, i.collectionid, i.id AS itemid, c.action, c.params, c.width, c.height, c.duration, c.mimetype, c.filesize, c.path, c.storageid FROM cache c, item i, collection col WHERE col.name = $1  AND i.signature = $2 AND c.action = $3 AND c.params = $4 AND i.collectionid=col.id AND c.itemid = i.id",
 	"getCacheByCollectionSignatureNullParam": "SELECT c.id, i.collectionid, i.id AS itemid, c.action, c.params, c.width, c.height, c.duration, c.mimetype, c.filesize, c.path, c.storageid FROM cache c, item i, collection col WHERE col.name = $1  AND i.signature = $2 AND c.action = $3 AND c.params is null AND i.collectionid=col.id AND c.itemid = i.id",
+	"getCachesByCollectionSignature": `
+SELECT
+    c.id, i.collectionid, i.id AS itemid, c.action, c.params, c.width, c.height, c.duration, c.mimetype, c.filesize, c.path, c.storageid,
+    COUNT(*) OVER () AS total_count
+FROM
+    cache c
+        JOIN
+    item i ON c.itemid = i.id
+        JOIN
+    collection col ON i.collectionid = col.id
+WHERE
+    col.name = $1
+  AND i.signature = $2
+LIMIT $3 OFFSET $4`,
 }
 
 func AfterConnectFunc(ctx context.Context, conn *pgx.Conn, logger zLogger.ZLogger) error {
@@ -147,6 +161,121 @@ func (d *mediaserverPG) DeleteCache(ctx context.Context, req *pb.CacheRequest) (
 		Message: fmt.Sprintf("cache %s/%s/%s/%s deleted", itemId.GetCollection(), itemId.GetSignature(), req.GetAction(), req.GetParams()),
 		Data:    nil,
 	}, nil
+}
+
+func (d *mediaserverPG) GetCaches(ctx context.Context, req *pb.CachesRequest) (*pb.CachesResult, error) {
+	var limit int64 = 100
+	var offset int64 = 0
+	pr := req.GetPageRequest()
+	if page := pr.GetPage(); page != nil {
+		limit = page.GetPageSize()
+		offset = limit * page.GetPageNo()
+	}
+
+	itemIdentifier := req.GetIdentifier()
+	sqlStr := "getCachesByCollectionSignature"
+	sqlParams := []any{
+		itemIdentifier.GetCollection(), itemIdentifier.GetSignature(), limit, offset,
+	}
+	rows, err := d.conn.Query(context.Background(), sqlStr, sqlParams...)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "cannot get caches for %s/%s: %v", itemIdentifier.GetCollection(), itemIdentifier.GetSignature(), err)
+	}
+	defer rows.Close()
+	res := &pb.CachesResult{
+		Caches: []*pb.Cache{},
+	}
+	var path zeronull.Text
+	var params zeronull.Text
+	var storageid zeronull.Text
+	var width zeronull.Int8
+	var height zeronull.Int8
+	var duration zeronull.Int8
+	var totalCount int64
+	var c = &cache{}
+	for rows.Next() {
+		if err := rows.Scan(
+			&c.Id,
+			&c.CollectionId,
+			&c.ItemId,
+			&c.Action,
+			&params,
+			&width,
+			&height,
+			&duration,
+			&c.Mimetype,
+			&c.Filesize,
+			&path,
+			&storageid,
+			&totalCount,
+		); err != nil {
+			return nil, errors.Wrapf(err, "cannot get caches %s/%s - %s", itemIdentifier.GetCollection(), itemIdentifier.GetSignature(), "getCachesByCollectionSignature")
+		}
+		c.Params = string(params)
+		c.Width = int(width)
+		c.Height = int(height)
+		c.Duration = int(duration)
+		c.Path = string(path)
+		c.StorageId = string(storageid)
+		sendCache := &pb.Cache{
+			Identifier: &pb.ItemIdentifier{
+				Collection: itemIdentifier.GetCollection(),
+				Signature:  itemIdentifier.GetSignature(),
+			},
+			Metadata: &pb.CacheMetadata{
+				Action:   c.Action,
+				Params:   c.Params,
+				Width:    int64(c.Width),
+				Height:   int64(c.Height),
+				Duration: int64(c.Duration),
+				Size:     int64(c.Filesize),
+				MimeType: c.Mimetype,
+				Path:     c.Path,
+			},
+		}
+		if c.StorageId != "" {
+			storAny, err := d.storageCache.Get(c.StorageId)
+			if err != nil {
+				return nil, errors.Wrapf(err, "cannot get storage %s", c.StorageId)
+			}
+			stor, ok := storAny.(*storage)
+			if !ok {
+				return nil, errors.Errorf("cannot cast storage %T to *storage", storAny)
+			}
+			sendCache.Metadata.Storage = &pb.Storage{
+				Name:       stor.Name,
+				Filebase:   stor.Filebase,
+				Datadir:    stor.Datadir,
+				Subitemdir: stor.Subitemdir,
+				Tempdir:    stor.Tempdir,
+			}
+		}
+		d.cacheCache.Set(
+			&CacheIdentifier{
+				Collection: itemIdentifier.GetCollection(),
+				Signature:  itemIdentifier.GetSignature(),
+				Action:     c.Action,
+				Params:     c.Params,
+			},
+			c)
+
+		res.Caches = append(res.Caches, sendCache)
+	}
+	mod := totalCount % limit
+	pages := (totalCount - mod) / limit
+	if mod > 0 {
+		pages++
+	}
+	res.PageResponse = &pbgeneric.PageResponse{
+		PageResponse: &pbgeneric.PageResponse_PageResult{
+			PageResult: &pbgeneric.PageResult{
+				Total:    pages,
+				PageNo:   offset / limit,
+				PageSize: limit,
+			},
+		},
+	}
+	return res, nil
 }
 
 func (d *mediaserverPG) GetCache(ctx context.Context, req *pb.CacheRequest) (*pb.Cache, error) {

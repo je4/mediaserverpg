@@ -12,9 +12,9 @@ require (
 	github.com/jackc/pgtype v1.14.3
 	github.com/jackc/pgx/v5 v5.6.0
 	github.com/je4/genericproto/v2 v2.0.3
-	github.com/je4/mediaserverproto/v2 v2.0.23
-	github.com/je4/miniresolver/v2 v2.0.7
-	github.com/je4/trustutil/v2 v2.0.11
+	github.com/je4/mediaserverproto/v2 v2.0.27
+	github.com/je4/miniresolver/v2 v2.0.8
+	github.com/je4/trustutil/v2 v2.0.12
 	github.com/je4/utils/v2 v2.0.38
 	github.com/rs/zerolog v1.33.0
 	gitlab.switch.ch/ub-unibas/go-ublogger v0.0.0-20240529135102-38bc77a4bfdf
@@ -32,7 +32,7 @@ require (
 	github.com/mattn/go-isatty v0.0.20 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/telkomdev/go-stash v1.0.4 // indirect
-	go.step.sm/crypto v0.45.1 // indirect
+	go.step.sm/crypto v0.46.0 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	golang.org/x/crypto v0.23.0 // indirect
 	golang.org/x/net v0.25.0 // indirect
