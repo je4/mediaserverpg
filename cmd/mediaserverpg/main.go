@@ -22,6 +22,8 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"regexp"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -95,7 +97,7 @@ func main() {
 		defer _logfile.Close()
 	}
 
-	l2 := _logger.With().Str("host", hostname).Str("addr", conf.LocalAddr).Logger() //.Output(output)
+	l2 := _logger.With().Str("host", hostname).Logger() //.Output(output)
 	var logger zLogger.ZLogger = &l2
 
 	pgxConf, err := pgxpool.ParseConfig(string(conf.DBConn))
@@ -112,18 +114,19 @@ func main() {
 		return nil
 	}
 	var conn *pgxpool.Pool
-	logger.Info().Msgf("connecting to database: %s", conf.DBConn)
+	var dbstrRegexp = regexp.MustCompile(`^postgres://postgres:([^@]+)@.+$`)
+	pws := dbstrRegexp.FindStringSubmatch(string(conf.DBConn))
+	if len(pws) == 2 {
+		logger.Info().Msgf("connecting to database: %s", strings.Replace(string(conf.DBConn), pws[1], "xxxxxxxx", -1))
+	} else {
+		logger.Info().Msgf("connecting to database")
+	}
 	conn, err = pgxpool.NewWithConfig(context.Background(), pgxConf)
 	//conn, err = pgx.ConnectConfig(context.Background(), pgxConf)
 	if err != nil {
 		logger.Fatal().Err(err).Msgf("cannot connect to database: %s", conf.DBConn)
 	}
 	defer conn.Close()
-
-	srv, err := service.NewMediaserverDatabasePG(conn, logger)
-	if err != nil {
-		logger.Fatal().Err(err).Msg("cannot create service")
-	}
 
 	// create TLS Certificate.
 	// the certificate MUST contain <package>.<service> as DNS name
@@ -143,7 +146,6 @@ func main() {
 	defer clientLoader.Close()
 
 	// create resolver client
-
 	resolverClient, err := resolver.NewMiniresolverClient(conf.ResolverAddr, conf.GRPCClient, clientTLSConfig, serverTLSConfig, time.Duration(conf.ResolverTimeout), time.Duration(conf.ResolverNotFoundTimeout), logger)
 	if err != nil {
 		logger.Fatal().Err(err).Msg("cannot create resolver client")
@@ -154,6 +156,14 @@ func main() {
 	grpcServer, err := resolverClient.NewServer(conf.LocalAddr)
 	if err != nil {
 		logger.Fatal().Err(err).Msg("cannot create server")
+	}
+	addr := grpcServer.GetAddr()
+	l2 = _logger.With().Str("addr", addr).Logger() //.Output(output)
+	logger = &l2
+
+	srv, err := service.NewMediaserverDatabasePG(conn, logger)
+	if err != nil {
+		logger.Fatal().Err(err).Msg("cannot create service")
 	}
 	// register the server
 	mediaserverproto.RegisterDatabaseServer(grpcServer, srv)

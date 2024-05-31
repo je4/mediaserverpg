@@ -79,7 +79,6 @@ func getItemLoader(conn *pgxpool.Pool, logger zLogger.ZLogger) gcache.LoaderFunc
 		i.Error = string(errorStr)
 		i.Sha512 = string(sha512)
 		i.PublicActions = string(publicActions)
-
 		return i, nil
 
 	}

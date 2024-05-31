@@ -1,4 +1,5 @@
-localaddr = ":7653"
+localaddr = ":0"
+#localaddr = ":7653"
 #resolveraddr = "[::1]:7777"
 resolveraddr = "127.0.0.1:7777"
 resolvertimeout = "10m"

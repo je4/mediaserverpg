@@ -23,6 +23,15 @@ import (
 
 var customTypes = []string{"item_type", "item_objecttype", "item_status"}
 var preparedStatements = map[string]string{
+	"getChildItemsByCollectionSignature": `
+SELECT 
+    i.id, i.collectionid, i.signature, i.urn, i.type, i.subtype, i.objecttype, i.mimetype, i.error, i.sha512, i.creation_date, i.last_modified, i.disabled, i.public, i.public_actions, i.status, i.parentid,
+    COUNT(*) OVER () AS total_count
+FROM item i
+ 		JOIN 
+    collection c ON i.collectionid = c.id 
+WHERE c.name = $1 
+  AND i.signature = $2`,
 	"getItemByCollectionSignature":           "SELECT i.id, i.collectionid, i.signature, i.urn, i.type, i.subtype, i.objecttype, i.mimetype, i.error, i.sha512, i.creation_date, i.last_modified, i.disabled, i.public, i.public_actions, i.status, i.parentid FROM item i, collection c WHERE c.name = $1 AND i.signature = $2 AND c.id=i.collectionid",
 	"getItemMetadataByCollectionSignature":   "SELECT i.metadata::text FROM item i, collection c WHERE c.name = $1 AND i.signature = $2 AND c.id=i.collectionid",
 	"getItemBySignature":                     "SELECT id, collectionid, signature, urn, type, subtype, objecttype, mimetype, error, sha512, creation_date, last_modified, disabled, public, public_actions, status, parentid FROM item WHERE collectionid = $1 AND signature = $2",
@@ -123,7 +132,7 @@ func (d *mediaserverPG) getStorage(id string) (*storage, error) {
 	return s, nil
 }
 
-func (d *mediaserverPG) DeleteCache(ctx context.Context, req *pb.CacheRequest) (*pbgeneric.DefaultResponse, error) {
+func (d *mediaserverPG) DeleteCache(_ context.Context, req *pb.CacheRequest) (*pbgeneric.DefaultResponse, error) {
 	itemId := req.GetIdentifier()
 	cacheId := &CacheIdentifier{
 		Collection: itemId.GetCollection(),
@@ -163,7 +172,7 @@ func (d *mediaserverPG) DeleteCache(ctx context.Context, req *pb.CacheRequest) (
 	}, nil
 }
 
-func (d *mediaserverPG) GetCaches(ctx context.Context, req *pb.CachesRequest) (*pb.CachesResult, error) {
+func (d *mediaserverPG) GetCaches(_ context.Context, req *pb.CachesRequest) (*pb.CachesResult, error) {
 	var limit int64 = 100
 	var offset int64 = 0
 	pr := req.GetPageRequest()
@@ -261,24 +270,26 @@ func (d *mediaserverPG) GetCaches(ctx context.Context, req *pb.CachesRequest) (*
 
 		res.Caches = append(res.Caches, sendCache)
 	}
-	mod := totalCount % limit
-	pages := (totalCount - mod) / limit
-	if mod > 0 {
-		pages++
-	}
-	res.PageResponse = &pbgeneric.PageResponse{
-		PageResponse: &pbgeneric.PageResponse_PageResult{
-			PageResult: &pbgeneric.PageResult{
-				Total:    pages,
-				PageNo:   offset / limit,
-				PageSize: limit,
+	if totalCount > offset+limit {
+		mod := totalCount % limit
+		pages := (totalCount - mod) / limit
+		if mod > 0 {
+			pages++
+		}
+		res.PageResponse = &pbgeneric.PageResponse{
+			PageResponse: &pbgeneric.PageResponse_PageResult{
+				PageResult: &pbgeneric.PageResult{
+					Total:    pages,
+					PageNo:   offset / limit,
+					PageSize: limit,
+				},
 			},
-		},
+		}
 	}
 	return res, nil
 }
 
-func (d *mediaserverPG) GetCache(ctx context.Context, req *pb.CacheRequest) (*pb.Cache, error) {
+func (d *mediaserverPG) GetCache(_ context.Context, req *pb.CacheRequest) (*pb.Cache, error) {
 	itemId := req.GetIdentifier()
 	cacheAny, err := d.cacheCache.Get(&CacheIdentifier{
 		Collection: itemId.GetCollection(),
@@ -341,7 +352,7 @@ func (d *mediaserverPG) GetCache(ctx context.Context, req *pb.CacheRequest) (*pb
 
 }
 
-func (d *mediaserverPG) GetStorage(ctx context.Context, id *pb.StorageIdentifier) (*pb.Storage, error) {
+func (d *mediaserverPG) GetStorage(_ context.Context, id *pb.StorageIdentifier) (*pb.Storage, error) {
 	s, err := d.getStorage(id.GetName())
 	if err != nil {
 		return nil, status.Errorf(codes.Internal, "cannot get storage %s: %v", id.GetName(), err)
@@ -368,7 +379,7 @@ func (d *mediaserverPG) getCollection(id string) (*collection, error) {
 	return c, nil
 }
 
-func (d *mediaserverPG) GetCollection(ctx context.Context, id *pb.CollectionIdentifier) (*pb.Collection, error) {
+func (d *mediaserverPG) GetCollection(_ context.Context, id *pb.CollectionIdentifier) (*pb.Collection, error) {
 	c, err := d.getCollection(id.GetCollection())
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -393,7 +404,7 @@ func (d *mediaserverPG) GetCollection(ctx context.Context, id *pb.CollectionIden
 	}, nil
 }
 
-func (d *mediaserverPG) GetCollections(empty *emptypb.Empty, result pb.Database_GetCollectionsServer) error {
+func (d *mediaserverPG) GetCollections(_ *emptypb.Empty, result pb.Database_GetCollectionsServer) error {
 	collections, err := getCollections(d.conn, d.logger)
 	if err != nil {
 		return status.Errorf(codes.Internal, "cannot get collections: %v", err)
@@ -418,7 +429,7 @@ func (d *mediaserverPG) GetCollections(empty *emptypb.Empty, result pb.Database_
 	return nil
 }
 
-func (d *mediaserverPG) CreateItem(ctx context.Context, item *pb.NewItem) (*pbgeneric.DefaultResponse, error) {
+func (d *mediaserverPG) CreateItem(_ context.Context, item *pb.NewItem) (*pbgeneric.DefaultResponse, error) {
 	if item == nil {
 		return nil, status.Errorf(codes.InvalidArgument, "item is nil")
 	}
@@ -466,7 +477,7 @@ func (d *mediaserverPG) CreateItem(ctx context.Context, item *pb.NewItem) (*pbge
 	}, nil
 }
 
-func (d *mediaserverPG) DeleteItem(ctx context.Context, id *pb.ItemIdentifier) (*pbgeneric.DefaultResponse, error) {
+func (d *mediaserverPG) DeleteItem(_ context.Context, id *pb.ItemIdentifier) (*pbgeneric.DefaultResponse, error) {
 	if id == nil {
 		return nil, status.Errorf(codes.InvalidArgument, "item identifier is nil")
 	}
@@ -494,7 +505,7 @@ func (d *mediaserverPG) DeleteItem(ctx context.Context, id *pb.ItemIdentifier) (
 	}, nil
 }
 
-func (d *mediaserverPG) GetItemMetadata(ctx context.Context, id *pb.ItemIdentifier) (*wrapperspb.StringValue, error) {
+func (d *mediaserverPG) GetItemMetadata(_ context.Context, id *pb.ItemIdentifier) (*wrapperspb.StringValue, error) {
 	if id == nil {
 		return nil, status.Errorf(codes.InvalidArgument, "item identifier is nil")
 	}
@@ -510,7 +521,7 @@ func (d *mediaserverPG) GetItemMetadata(ctx context.Context, id *pb.ItemIdentifi
 	}, nil
 }
 
-func (d *mediaserverPG) GetItem(ctx context.Context, id *pb.ItemIdentifier) (*pb.Item, error) {
+func (d *mediaserverPG) GetItem(_ context.Context, id *pb.ItemIdentifier) (*pb.Item, error) {
 	if id == nil {
 		return nil, status.Errorf(codes.InvalidArgument, "item identifier is nil")
 	}
@@ -536,6 +547,7 @@ func (d *mediaserverPG) GetItem(ctx context.Context, id *pb.ItemIdentifier) (*pb
 			Sha512:     &_it.Sha512,
 		},
 		Status: _it.Status,
+		Urn:    _it.Urn,
 	}
 	if _it.Error != "" {
 		it.Error = &_it.Error
@@ -563,7 +575,136 @@ func (d *mediaserverPG) GetItem(ctx context.Context, id *pb.ItemIdentifier) (*pb
 	return it, nil
 }
 
-func (d *mediaserverPG) ExistsItem(ctx context.Context, id *pb.ItemIdentifier) (*pbgeneric.DefaultResponse, error) {
+func (d *mediaserverPG) GetChildItems(_ context.Context, req *pb.ItemsRequest) (*pb.ItemsResult, error) {
+	var limit int64 = 100
+	var offset int64 = 0
+	pr := req.GetPageRequest()
+	if page := pr.GetPage(); page != nil {
+		limit = page.GetPageSize()
+		offset = limit * page.GetPageNo()
+	}
+
+	itemIdentifier := req.GetIdentifier()
+	sqlStr := "getCachesByCollectionSignature"
+	sqlParams := []any{
+		itemIdentifier.GetCollection(), itemIdentifier.GetSignature(), limit, offset,
+	}
+	rows, err := d.conn.Query(context.Background(), sqlStr, sqlParams...)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "cannot get caches for %s/%s: %v", itemIdentifier.GetCollection(), itemIdentifier.GetSignature(), err)
+	}
+	defer rows.Close()
+	res := &pb.ItemsResult{
+		Items: []*pb.Item{},
+	}
+	var totalCount int64
+	var parentCache = map[string]*pb.ItemIdentifier{}
+	for rows.Next() {
+		var _it = item{}
+		var parentID zeronull.Text
+		var _type zeronull.Text
+		var subtype zeronull.Text
+		var objecttype zeronull.Text
+		var mimetype zeronull.Text
+		var errorStr zeronull.Text
+		var sha512 zeronull.Text
+		var publicActions zeronull.Text
+		if err := rows.Scan(
+			&_it.Id,
+			&_it.Collectionid,
+			&_it.Signature,
+			&_it.Urn,
+			&_type,
+			&subtype,
+			&objecttype,
+			&mimetype,
+			&errorStr,
+			&sha512,
+			&_it.CreationDate,
+			&_it.LastModified,
+			&_it.Disabled,
+			&_it.Public,
+			&publicActions,
+			&_it.Status,
+			&parentID,
+			&totalCount,
+		); err != nil {
+			return nil, errors.Wrapf(err, "cannot get item %s/%s - %s", itemIdentifier.GetCollection(), itemIdentifier.GetSignature(), "getChildItemsByCollectionSignature")
+		}
+		_it.PartentId = string(parentID)
+		_it.Type = string(_type)
+		_it.Subtype = string(subtype)
+		_it.Objecttype = string(objecttype)
+		_it.Mimetype = string(mimetype)
+		_it.Error = string(errorStr)
+		_it.Sha512 = string(sha512)
+		_it.PublicActions = string(publicActions)
+		var it = &pb.Item{
+			Identifier: &pb.ItemIdentifier{
+				Collection: itemIdentifier.GetCollection(),
+				Signature:  itemIdentifier.GetSignature(),
+			},
+			Metadata: &pb.ItemMetadata{
+				Type:       &_it.Type,
+				Subtype:    &_it.Subtype,
+				Mimetype:   &_it.Mimetype,
+				Objecttype: &_it.Objecttype,
+				Sha512:     &_it.Sha512,
+			},
+			Status: _it.Status,
+		}
+		if _it.Error != "" {
+			it.Error = &_it.Error
+		}
+		if !_it.CreationDate.IsZero() {
+			it.Created = timestamppb.New(_it.CreationDate)
+		}
+		if !_it.LastModified.IsZero() {
+			it.Updated = timestamppb.New(_it.LastModified)
+		}
+		it.Disabled = _it.Disabled
+		it.Public = _it.Public
+		if _it.PublicActions != "" {
+			it.PublicActions = ([]byte)(_it.PublicActions)
+		}
+		if _it.PartentId != "" {
+			pIdent, ok := parentCache[_it.PartentId]
+			if ok {
+				it.Parent = pIdent
+			} else {
+				it.Parent = &pb.ItemIdentifier{}
+				sqlStr := `SELECT collectionid, signature FROM item WHERE id = $1`
+				if err := d.conn.QueryRow(context.Background(), sqlStr, _it.PartentId).Scan(&it.Parent.Collection, &it.Parent.Signature); err != nil {
+					if errors.Is(err, pgx.ErrNoRows) {
+						return nil, status.Errorf(codes.NotFound, "parent item %s not found", _it.PartentId)
+					}
+					return nil, status.Errorf(codes.Internal, "cannot get parent item %s [%s]: %v", sqlStr, _it.PartentId, err)
+				}
+				parentCache[_it.PartentId] = it.Parent
+			}
+		}
+		res.Items = append(res.Items, it)
+	}
+	if totalCount > offset+limit {
+		mod := totalCount % limit
+		pages := (totalCount - mod) / limit
+		if mod > 0 {
+			pages++
+		}
+		res.PageResponse = &pbgeneric.PageResponse{
+			PageResponse: &pbgeneric.PageResponse_PageResult{
+				PageResult: &pbgeneric.PageResult{
+					Total:    pages,
+					PageNo:   offset / limit,
+					PageSize: limit,
+				},
+			},
+		}
+	}
+	return res, nil
+}
+
+func (d *mediaserverPG) ExistsItem(_ context.Context, id *pb.ItemIdentifier) (*pbgeneric.DefaultResponse, error) {
 	if id == nil {
 		return nil, status.Errorf(codes.InvalidArgument, "item identifier is nil")
 	}
