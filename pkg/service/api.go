@@ -551,8 +551,11 @@ func (d *mediaserverPG) GetItem(_ context.Context, id *pb.ItemIdentifier) (*pb.I
 			Objecttype: &_it.Objecttype,
 			Sha512:     &_it.Sha512,
 		},
-		Status: _it.Status,
-		Urn:    _it.Urn,
+		Status:        _it.Status,
+		Urn:           _it.Urn,
+		PublicActions: _it.PublicActions,
+		Disabled:      _it.Disabled,
+		Public:        _it.Public,
 	}
 	if _it.Error != "" {
 		it.Error = &_it.Error
@@ -562,11 +565,6 @@ func (d *mediaserverPG) GetItem(_ context.Context, id *pb.ItemIdentifier) (*pb.I
 	}
 	if !_it.LastModified.IsZero() {
 		it.Updated = timestamppb.New(_it.LastModified)
-	}
-	it.Disabled = _it.Disabled
-	it.Public = _it.Public
-	if _it.PublicActions != "" {
-		it.PublicActions = ([]byte)(_it.PublicActions)
 	}
 	if _it.PartentId != "" {
 		sqlStr := `SELECT collectionid, signature FROM item WHERE id = $1`
@@ -613,7 +611,6 @@ func (d *mediaserverPG) GetChildItems(_ context.Context, req *pb.ItemsRequest) (
 		var mimetype zeronull.Text
 		var errorStr zeronull.Text
 		var sha512 zeronull.Text
-		var publicActions zeronull.Text
 		if err := rows.Scan(
 			&_it.Id,
 			&_it.Collectionid,
@@ -629,7 +626,7 @@ func (d *mediaserverPG) GetChildItems(_ context.Context, req *pb.ItemsRequest) (
 			&_it.LastModified,
 			&_it.Disabled,
 			&_it.Public,
-			&publicActions,
+			&_it.PublicActions,
 			&_it.Status,
 			&parentID,
 			&totalCount,
@@ -643,7 +640,6 @@ func (d *mediaserverPG) GetChildItems(_ context.Context, req *pb.ItemsRequest) (
 		_it.Mimetype = string(mimetype)
 		_it.Error = string(errorStr)
 		_it.Sha512 = string(sha512)
-		_it.PublicActions = string(publicActions)
 		var it = &pb.Item{
 			Identifier: &pb.ItemIdentifier{
 				Collection: itemIdentifier.GetCollection(),
@@ -656,7 +652,10 @@ func (d *mediaserverPG) GetChildItems(_ context.Context, req *pb.ItemsRequest) (
 				Objecttype: &_it.Objecttype,
 				Sha512:     &_it.Sha512,
 			},
-			Status: _it.Status,
+			Status:        _it.Status,
+			PublicActions: _it.PublicActions,
+			Disabled:      _it.Disabled,
+			Public:        _it.Public,
 		}
 		if _it.Error != "" {
 			it.Error = &_it.Error
@@ -666,11 +665,6 @@ func (d *mediaserverPG) GetChildItems(_ context.Context, req *pb.ItemsRequest) (
 		}
 		if !_it.LastModified.IsZero() {
 			it.Updated = timestamppb.New(_it.LastModified)
-		}
-		it.Disabled = _it.Disabled
-		it.Public = _it.Public
-		if _it.PublicActions != "" {
-			it.PublicActions = ([]byte)(_it.PublicActions)
 		}
 		if _it.PartentId != "" {
 			pIdent, ok := parentCache[_it.PartentId]
