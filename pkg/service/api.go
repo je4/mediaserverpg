@@ -25,13 +25,18 @@ var customTypes = []string{"item_type", "item_objecttype", "item_status"}
 var preparedStatements = map[string]string{
 	"getChildItemsByCollectionSignature": `
 SELECT 
-    i.id, i.collectionid, i.signature, i.urn, i.type, i.subtype, i.objecttype, i.mimetype, i.error, i.sha512, i.creation_date, i.last_modified, i.disabled, i.public, i.public_actions, i.status, i.parentid,
+    i.id, i.collectionid, i.signature, i.urn, i.type, i.subtype, i.objecttype, 
+    i.mimetype, i.error, i.sha512, i.creation_date, i.last_modified, i.disabled, 
+    i.public, i.public_actions, i.status, i.parentid,
     COUNT(*) OVER () AS total_count
 FROM item i
  		JOIN 
     collection c ON i.collectionid = c.id 
+		JOIN
+    	item p ON i.parentid = p.id 
 WHERE c.name = $1 
-  AND i.signature = $2`,
+  AND p.signature = $2
+LIMIT $3 OFFSET $4`,
 	"getItemByCollectionSignature":           "SELECT i.id, i.collectionid, i.signature, i.urn, i.type, i.subtype, i.objecttype, i.mimetype, i.error, i.sha512, i.creation_date, i.last_modified, i.disabled, i.public, i.public_actions, i.status, i.parentid FROM item i, collection c WHERE c.name = $1 AND i.signature = $2 AND c.id=i.collectionid",
 	"getItemMetadataByCollectionSignature":   "SELECT i.metadata::text FROM item i, collection c WHERE c.name = $1 AND i.signature = $2 AND c.id=i.collectionid",
 	"getItemBySignature":                     "SELECT id, collectionid, signature, urn, type, subtype, objecttype, mimetype, error, sha512, creation_date, last_modified, disabled, public, public_actions, status, parentid FROM item WHERE collectionid = $1 AND signature = $2",
@@ -585,7 +590,7 @@ func (d *mediaserverPG) GetChildItems(_ context.Context, req *pb.ItemsRequest) (
 	}
 
 	itemIdentifier := req.GetIdentifier()
-	sqlStr := "getCachesByCollectionSignature"
+	sqlStr := "getChildItemsByCollectionSignature"
 	sqlParams := []any{
 		itemIdentifier.GetCollection(), itemIdentifier.GetSignature(), limit, offset,
 	}
@@ -629,7 +634,7 @@ func (d *mediaserverPG) GetChildItems(_ context.Context, req *pb.ItemsRequest) (
 			&parentID,
 			&totalCount,
 		); err != nil {
-			return nil, errors.Wrapf(err, "cannot get item %s/%s - %s", itemIdentifier.GetCollection(), itemIdentifier.GetSignature(), "getChildItemsByCollectionSignature")
+			return nil, errors.Wrapf(err, "cannot get children of item %s/%s - %s", itemIdentifier.GetCollection(), itemIdentifier.GetSignature(), "getChildItemsByCollectionSignature")
 		}
 		_it.PartentId = string(parentID)
 		_it.Type = string(_type)
