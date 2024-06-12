@@ -158,7 +158,7 @@ func main() {
 		logger.Fatal().Err(err).Msg("cannot create server")
 	}
 	addr := grpcServer.GetAddr()
-	l2 = _logger.With().Str("addr", addr).Logger() //.Output(output)
+	l2 = _logger.With().Timestamp().Str("addr", addr).Logger() //.Output(output)
 	logger = &l2
 
 	srv, err := service.NewMediaserverDatabasePG(conn, logger)
