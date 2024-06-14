@@ -17,6 +17,8 @@ import (
 	emptypb "google.golang.org/protobuf/types/known/emptypb"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
 	wrapperspb "google.golang.org/protobuf/types/known/wrapperspb"
+	"slices"
+	"strings"
 	"sync"
 	"time"
 )
@@ -37,6 +39,17 @@ FROM item i
 WHERE c.name = $1 
   AND p.signature = $2
 LIMIT $3 OFFSET $4`,
+	"getChildItemsByCollectionSignatureSuffix": `
+SELECT 
+    c.name AS collection, i.signature AS signature
+FROM item i
+ 		JOIN 
+    collection c ON i.collectionid = c.id 
+		JOIN
+    	item p ON i.parentid = p.id 
+WHERE c.name = $1 
+  AND p.signature = $2
+  AND i.signature SIMILAR TO $3`,
 	"getItemByCollectionSignature":           "SELECT i.id, i.collectionid, i.signature, i.urn, i.type, i.subtype, i.objecttype, i.mimetype, i.error, i.sha512, i.creation_date, i.last_modified, i.disabled, i.public, i.public_actions, i.status, i.parentid FROM item i, collection c WHERE c.name = $1 AND i.signature = $2 AND c.id=i.collectionid",
 	"getItemMetadataByCollectionSignature":   "SELECT i.metadata::text FROM item i, collection c WHERE c.name = $1 AND i.signature = $2 AND c.id=i.collectionid",
 	"getItemBySignature":                     "SELECT id, collectionid, signature, urn, type, subtype, objecttype, mimetype, error, sha512, creation_date, last_modified, disabled, public, public_actions, status, parentid FROM item WHERE collectionid = $1 AND signature = $2",
@@ -60,6 +73,9 @@ WHERE
     col.name = $1
   AND i.signature = $2
 LIMIT $3 OFFSET $4`,
+	"getIngestItem":          "SELECT id, collectionid, signature, urn, status FROM item WHERE status IN ('new','newcopy','newmove') OR (status IN ('indexing','indexingcopy','indexingmove') and last_modified < now() - interval '1 hour') ORDER BY last_modified ASC LIMIT 1",
+	"getDerivateIngestItem1": "SELECT c.name AS collection, i.signature AS signature FROM collection c, item i LEFT JOIN item child ON child.parentid = i.id AND child.signature NOT SIMILAR TO $2 WHERE i.type = $1 AND i.collectionid = c.id AND child.id IS NULL",
+	"getDerivateIngestItem2": "SELECT c.name AS collection, i.signature AS signature  FROM collection c, item i LEFT JOIN item child ON child.parentid = i.id AND child.signature NOT SIMILAR TO $3 WHERE i.type = $1 AND i.subtype = $2 AND i.collectionid = c.id AND child.id IS NULL",
 }
 
 func AfterConnectFunc(ctx context.Context, conn *pgx.Conn, logger zLogger.ZLogger) error {
@@ -88,6 +104,7 @@ func NewMediaserverDatabasePG(conn *pgxpool.Pool, logger zLogger.ZLogger) (*medi
 		collectionCache: gcache.New(200).Expiration(time.Minute * 10).LRU().LoaderFunc(getCollectionLoader(conn, logger)).Build(),
 		itemCache:       gcache.New(500).Expiration(time.Minute * 10).LRU().LoaderFunc(getItemLoader(conn, logger)).Build(),
 		cacheCache:      gcache.New(800).Expiration(time.Minute * 10).LRU().LoaderFunc(getCacheLoader(conn, logger)).Build(),
+		derivateIngest:  gcache.New(1000).Expiration(time.Hour * 12).LRU().Build(),
 	}, nil
 }
 
@@ -99,6 +116,7 @@ type mediaserverPG struct {
 	collectionCache gcache.Cache
 	itemCache       gcache.Cache
 	cacheCache      gcache.Cache
+	derivateIngest  gcache.Cache
 }
 
 func (d *mediaserverPG) getItemMetadata(collection, signature string) (string, error) {
@@ -743,6 +761,107 @@ func (d *mediaserverPG) Ping(context.Context, *emptypb.Empty) (*pbgeneric.Defaul
 	}, nil
 }
 
+var getDerivateIngestItemMutex = map[string]*sync.Mutex{}
+
+func (d *mediaserverPG) GetDerivateIngestItem(_ context.Context, req *pb.DerivatIngestRequest) (*pb.DerivatIngestResponse, error) {
+	id := strings.Join(req.GetSuffix(), "/")
+
+	// todo: correct locking including map operations
+	mutex, ok := getDerivateIngestItemMutex[id]
+	if !ok {
+		mutex = &sync.Mutex{}
+		getDerivateIngestItemMutex[id] = mutex
+	}
+	mutex.Lock()
+	defer mutex.Unlock()
+	params := []any{req.GetType()}
+	sqlStr := "getDerivateIngestItem1"
+	if req.GetSubtype() != "" {
+		sqlStr = "getDerivateIngestItem2"
+		params = append(params, req.GetSubtype())
+	}
+	suffixesParam := fmt.Sprintf("%%(%s)", strings.Join(req.GetSuffix(), "|"))
+	params = append(params, suffixesParam)
+
+	rows, err := d.conn.Query(context.Background(), sqlStr, params...)
+	if err != nil {
+		return nil, status.Errorf(codes.Internal, "cannot get derivate ingest item %s [%v]: %v", sqlStr, params, err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var col, signature string
+		if err := rows.Scan(&col, &signature); err != nil {
+			return nil, status.Errorf(codes.Internal, "cannot scan derivate ingest item %s [%v]: %v", sqlStr, params, err)
+		}
+		it, err := d.getItem(col, signature)
+		if err != nil {
+			return nil, status.Errorf(codes.Internal, "cannot get item %s/%s: %v", col, signature, err)
+		}
+		findSuffixes := func() ([]string, error) {
+			var suffixesFound = []string{}
+			sqlStr2 := "getChildItemsByCollectionSignatureSuffix"
+			params2 := []any{col, signature, fmt.Sprintf("%%(%s)", strings.Join(req.GetSuffix(), "|"))}
+			rows2, err := d.conn.Query(context.Background(), sqlStr2, params2...)
+			if err != nil {
+				return nil, status.Errorf(codes.Internal, "cannot get children for %s/%s: %v", col, signature, err)
+			}
+			defer rows2.Close()
+			for rows2.Next() {
+				var col2, signature2 string
+				if err := rows2.Scan(&col2, &signature2); err != nil {
+					return nil, status.Errorf(codes.Internal, "cannot scan child item for %s/%s: %v", col2, signature2, err)
+				}
+				for _, suffix := range req.GetSuffix() {
+					if strings.HasSuffix(signature2, suffix) {
+						suffixesFound = append(suffixesFound, suffix)
+					}
+				}
+			}
+			return suffixesFound, nil
+		}
+		suffixes, err := findSuffixes()
+		if err != nil {
+			return nil, err
+		}
+		if len(suffixes) == len(req.GetSuffix()) {
+			continue
+		}
+		id2 := fmt.Sprintf("%s/%s(%s)", col, signature, strings.Join(req.GetSuffix(), "|"))
+		if d.derivateIngest.Has(id2) {
+			continue
+		}
+		d.derivateIngest.Set(id2, true)
+		var missingSuffixes = []string{}
+		for _, suffix := range req.GetSuffix() {
+			if !slices.Contains(suffixes, suffix) {
+				missingSuffixes = append(missingSuffixes, suffix)
+			}
+		}
+		return &pb.DerivatIngestResponse{
+			Item: &pb.Item{
+				Identifier: &pb.ItemIdentifier{
+					Collection: col,
+					Signature:  signature,
+				},
+				Metadata: &pb.ItemMetadata{
+					Type:       &it.Type,
+					Subtype:    &it.Subtype,
+					Mimetype:   &it.Mimetype,
+					Objecttype: &it.Objecttype,
+					Sha512:     &it.Sha512,
+				},
+				Status:        it.Status,
+				Urn:           it.Urn,
+				PublicActions: it.PublicActions,
+				Disabled:      it.Disabled,
+				Public:        it.Public,
+			},
+			Missing: missingSuffixes,
+		}, nil
+	}
+	return nil, status.Errorf(codes.NotFound, "no ingest item found")
+}
+
 // overlapping of GetIngestItem calls must be prevented
 var getIngestItemMutex = &sync.Mutex{}
 
@@ -752,7 +871,7 @@ func (d *mediaserverPG) GetIngestItem(context.Context, *emptypb.Empty) (*pb.Inge
 	}
 	getIngestItemMutex.Lock()
 	defer getIngestItemMutex.Unlock()
-	sqlStr := "SELECT id, collectionid, signature, urn, status FROM item WHERE status IN ('new','newcopy','newmove') OR (status IN ('indexing','indexingcopy','indexingmove') and last_modified < now() - interval '1 hour') ORDER BY last_modified ASC LIMIT 1"
+	sqlStr := "getIngestItem"
 	var collectionid, itemid, statusStr string
 	if err := d.conn.QueryRow(context.Background(), sqlStr).Scan(&itemid, &collectionid, &result.Identifier.Signature, &result.Urn, &statusStr); err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
