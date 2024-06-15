@@ -153,7 +153,7 @@ func main() {
 	defer resolverClient.Close()
 
 	// create grpc server with resolver for name resolution
-	grpcServer, err := resolverClient.NewServer(conf.LocalAddr)
+	grpcServer, err := resolverClient.NewServer(conf.LocalAddr, conf.ServerDomains)
 	if err != nil {
 		logger.Fatal().Err(err).Msg("cannot create server")
 	}

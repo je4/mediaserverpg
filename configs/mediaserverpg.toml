@@ -1,5 +1,6 @@
 localaddr = ":0"
 #localaddr = ":7653"
+serverdomains = ["ubmedia", ""]
 #resolveraddr = "[::1]:7777"
 resolveraddr = "127.0.0.1:7777"
 resolvertimeout = "10m"
