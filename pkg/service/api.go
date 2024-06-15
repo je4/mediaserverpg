@@ -74,8 +74,8 @@ WHERE
   AND i.signature = $2
 LIMIT $3 OFFSET $4`,
 	"getIngestItem":          "SELECT id, collectionid, signature, urn, status FROM item WHERE status IN ('new','newcopy','newmove') OR (status IN ('indexing','indexingcopy','indexingmove') and last_modified < now() - interval '1 hour') ORDER BY last_modified ASC LIMIT 1",
-	"getDerivateIngestItem1": "SELECT c.name AS collection, i.signature AS signature FROM collection c, item i LEFT JOIN item child ON child.parentid = i.id AND child.signature NOT SIMILAR TO $2 WHERE i.type = $1 AND i.collectionid = c.id AND child.id IS NULL",
-	"getDerivateIngestItem2": "SELECT c.name AS collection, i.signature AS signature  FROM collection c, item i LEFT JOIN item child ON child.parentid = i.id AND child.signature NOT SIMILAR TO $3 WHERE i.type = $1 AND i.subtype = $2 AND i.collectionid = c.id AND child.id IS NULL",
+	"getDerivateIngestItem1": "SELECT c.name AS collection, i.signature AS signature FROM collection c, item i LEFT JOIN item child ON child.parentid = i.id AND child.signature NOT SIMILAR TO $2 WHERE i.parentid IS NULL AND i.type = $1 AND i.collectionid = c.id AND child.id IS NULL",
+	"getDerivateIngestItem2": "SELECT c.name AS collection, i.signature AS signature  FROM collection c, item i LEFT JOIN item child ON child.parentid = i.id AND child.signature NOT SIMILAR TO $3 WHERE i.parentid IS NULL AND i.type = $1 AND i.subtype = $2 AND i.collectionid = c.id AND child.id IS NULL",
 }
 
 func AfterConnectFunc(ctx context.Context, conn *pgx.Conn, logger zLogger.ZLogger) error {
