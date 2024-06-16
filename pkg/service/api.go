@@ -73,9 +73,26 @@ WHERE
     col.name = $1
   AND i.signature = $2
 LIMIT $3 OFFSET $4`,
-	"getIngestItem":          "SELECT id, collectionid, signature, urn, status FROM item WHERE status IN ('new','newcopy','newmove') OR (status IN ('indexing','indexingcopy','indexingmove') and last_modified < now() - interval '1 hour') ORDER BY last_modified ASC LIMIT 1",
-	"getDerivateIngestItem1": "SELECT c.name AS collection, i.signature AS signature FROM collection c, item i LEFT JOIN item child ON child.parentid = i.id AND child.signature NOT SIMILAR TO $2 WHERE i.parentid IS NULL AND i.type = $1 AND i.collectionid = c.id AND child.id IS NULL",
-	"getDerivateIngestItem2": "SELECT c.name AS collection, i.signature AS signature  FROM collection c, item i LEFT JOIN item child ON child.parentid = i.id AND child.signature NOT SIMILAR TO $3 WHERE i.parentid IS NULL AND i.type = $1 AND i.subtype = $2 AND i.collectionid = c.id AND child.id IS NULL",
+	"getIngestItem": "SELECT id, collectionid, signature, urn, status FROM item WHERE status IN ('new','newcopy','newmove') OR (status IN ('indexing','indexingcopy','indexingmove') and last_modified < now() - interval '1 hour') ORDER BY last_modified ASC LIMIT 1",
+	"getDerivateIngestItem1": `SELECT c.name AS collection, i.signature AS signature
+	FROM collection c, item i
+	WHERE i.parentid IS NULL
+		AND i.type = $1
+		AND i.collectionid = c.id
+		AND (SELECT COUNT(*)
+				FROM item child
+				WHERE child.parentid=i.id
+					AND child.signature SIMILAR TO $2) < $3`,
+	"getDerivateIngestItem2": `SELECT c.name AS collection, i.signature AS signature
+	FROM collection c, item i
+	WHERE i.parentid IS NULL
+		AND i.type = $1
+		AND i.subtype = $2
+		AND i.collectionid = c.id
+		AND (SELECT COUNT(*)
+			FROM item child
+			WHERE child.parentid=i.id
+			AND child.signature SIMILAR TO $3) < $4`,
 }
 
 func AfterConnectFunc(ctx context.Context, conn *pgx.Conn, logger zLogger.ZLogger) error {
@@ -463,7 +480,7 @@ func (d *mediaserverPG) CreateItem(_ context.Context, item *pb.NewItem) (*pbgene
 	if err != nil {
 		return nil, status.Errorf(codes.InvalidArgument, "cannot get collection %s: %v", item.GetIdentifier().GetCollection(), err)
 	}
-	sqlStr := "INSERT INTO item (collectionid, signature, urn, public, status, creation_date, last_modified) VALUES ($1, $2, $3, $4, $5, now(), now())"
+	sqlStr := "INSERT INTO item (collectionid, signature, urn, parentid, public, status, creation_date, last_modified) VALUES ($1, $2, $3, $4, $5, $6, now(), now())"
 	var newstatus string
 	switch item.GetIngestType() {
 	case pb.IngestType_KEEP:
@@ -475,8 +492,22 @@ func (d *mediaserverPG) CreateItem(_ context.Context, item *pb.NewItem) (*pbgene
 	default:
 		return nil, status.Errorf(codes.InvalidArgument, "invalid ingest type %s", item.GetIngestType())
 	}
+	var parentID zeronull.Text
+	if parent := item.GetParent(); parent != nil {
+		if parent.GetSignature() == "" {
+			return nil, status.Errorf(codes.InvalidArgument, "parent signature is empty")
+		}
+		if parent.GetCollection() == "" {
+			return nil, status.Errorf(codes.InvalidArgument, "parent collection is empty")
+		}
+		p, err := d.getItem(parent.GetCollection(), parent.GetSignature())
+		if err != nil {
+			return nil, status.Errorf(codes.InvalidArgument, "cannot get parent %s/%s: %v", parent.GetCollection(), parent.GetSignature(), err)
+		}
+		parentID = zeronull.Text(p.Id)
+	}
 	params := []any{
-		c.Id, item.GetIdentifier().GetSignature(), item.GetUrn(), item.GetPublic(), newstatus,
+		c.Id, item.GetIdentifier().GetSignature(), item.GetUrn(), parentID, item.GetPublic(), newstatus,
 	}
 	tag, err := d.conn.Exec(context.Background(),
 		sqlStr,
@@ -781,7 +812,7 @@ func (d *mediaserverPG) GetDerivateIngestItem(_ context.Context, req *pb.Derivat
 		params = append(params, req.GetSubtype())
 	}
 	suffixesParam := fmt.Sprintf("%%(%s)", strings.Join(req.GetSuffix(), "|"))
-	params = append(params, suffixesParam)
+	params = append(params, suffixesParam, len(req.GetSuffix()))
 
 	rows, err := d.conn.Query(context.Background(), sqlStr, params...)
 	if err != nil {
