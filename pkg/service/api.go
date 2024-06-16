@@ -615,13 +615,14 @@ func (d *mediaserverPG) GetItem(_ context.Context, id *pb.ItemIdentifier) (*pb.I
 	if !_it.LastModified.IsZero() {
 		it.Updated = timestamppb.New(_it.LastModified)
 	}
-	if _it.PartentId != "" {
+	if _it.ParentId != "" {
+		it.Parent = &pb.ItemIdentifier{}
 		sqlStr := `SELECT collectionid, signature FROM item WHERE id = $1`
-		if err := d.conn.QueryRow(context.Background(), sqlStr, _it.PartentId).Scan(&it.Parent.Collection, &it.Parent.Signature); err != nil {
+		if err := d.conn.QueryRow(context.Background(), sqlStr, _it.ParentId).Scan(&it.Parent.Collection, &it.Parent.Signature); err != nil {
 			if errors.Is(err, pgx.ErrNoRows) {
-				return nil, status.Errorf(codes.NotFound, "parent item %s not found", _it.PartentId)
+				return nil, status.Errorf(codes.NotFound, "parent item %s not found", _it.ParentId)
 			}
-			return nil, status.Errorf(codes.Internal, "cannot get parent item %s [%s]: %v", sqlStr, _it.PartentId, err)
+			return nil, status.Errorf(codes.Internal, "cannot get parent item %s [%s]: %v", sqlStr, _it.ParentId, err)
 		}
 	}
 	return it, nil
@@ -682,7 +683,7 @@ func (d *mediaserverPG) GetChildItems(_ context.Context, req *pb.ItemsRequest) (
 		); err != nil {
 			return nil, errors.Wrapf(err, "cannot get children of item %s/%s - %s", itemIdentifier.GetCollection(), itemIdentifier.GetSignature(), "getChildItemsByCollectionSignature")
 		}
-		_it.PartentId = string(parentID)
+		_it.ParentId = string(parentID)
 		_it.Type = string(_type)
 		_it.Subtype = string(subtype)
 		_it.Objecttype = string(objecttype)
@@ -715,20 +716,20 @@ func (d *mediaserverPG) GetChildItems(_ context.Context, req *pb.ItemsRequest) (
 		if !_it.LastModified.IsZero() {
 			it.Updated = timestamppb.New(_it.LastModified)
 		}
-		if _it.PartentId != "" {
-			pIdent, ok := parentCache[_it.PartentId]
+		if _it.ParentId != "" {
+			pIdent, ok := parentCache[_it.ParentId]
 			if ok {
 				it.Parent = pIdent
 			} else {
 				it.Parent = &pb.ItemIdentifier{}
 				sqlStr := `SELECT collectionid, signature FROM item WHERE id = $1`
-				if err := d.conn.QueryRow(context.Background(), sqlStr, _it.PartentId).Scan(&it.Parent.Collection, &it.Parent.Signature); err != nil {
+				if err := d.conn.QueryRow(context.Background(), sqlStr, _it.ParentId).Scan(&it.Parent.Collection, &it.Parent.Signature); err != nil {
 					if errors.Is(err, pgx.ErrNoRows) {
-						return nil, status.Errorf(codes.NotFound, "parent item %s not found", _it.PartentId)
+						return nil, status.Errorf(codes.NotFound, "parent item %s not found", _it.ParentId)
 					}
-					return nil, status.Errorf(codes.Internal, "cannot get parent item %s [%s]: %v", sqlStr, _it.PartentId, err)
+					return nil, status.Errorf(codes.Internal, "cannot get parent item %s [%s]: %v", sqlStr, _it.ParentId, err)
 				}
-				parentCache[_it.PartentId] = it.Parent
+				parentCache[_it.ParentId] = it.Parent
 			}
 		}
 		res.Items = append(res.Items, it)

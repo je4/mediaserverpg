@@ -26,7 +26,7 @@ type item struct {
 	Public        bool
 	PublicActions []string
 	Status        string
-	PartentId     string
+	ParentId      string
 	Objecttype    string
 }
 
@@ -70,7 +70,7 @@ func getItemLoader(conn *pgxpool.Pool, logger zLogger.ZLogger) gcache.LoaderFunc
 		); err != nil {
 			return nil, errors.Wrapf(err, "cannot get item %s/%s - %s", id.Collection, id.Signature, "getItemByCollectionSignature")
 		}
-		i.PartentId = string(parentID)
+		i.ParentId = string(parentID)
 		i.Type = string(_type)
 		i.Subtype = string(subtype)
 		i.Objecttype = string(objecttype)
