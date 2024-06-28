@@ -32,10 +32,10 @@ SELECT
     i.public, i.public_actions, i.status, i.parentid,
     COUNT(*) OVER () AS total_count
 FROM item i
- 		JOIN 
-    collection c ON i.collectionid = c.id 
 		JOIN
     	item p ON i.parentid = p.id 
+ 		JOIN 
+    	collection c ON p.collectionid = c.id 
 WHERE c.name = $1 
   AND p.signature = $2
 LIMIT $3 OFFSET $4`,
@@ -43,10 +43,10 @@ LIMIT $3 OFFSET $4`,
 SELECT 
     c.name AS collection, i.signature AS signature
 FROM item i
- 		JOIN 
-    collection c ON i.collectionid = c.id 
 		JOIN
     	item p ON i.parentid = p.id 
+ 		JOIN 
+    collection c ON p.collectionid = c.id 
 WHERE c.name = $1 
   AND p.signature = $2
   AND i.signature SIMILAR TO $3`,
@@ -690,10 +690,14 @@ func (d *mediaserverPG) GetChildItems(_ context.Context, req *pb.ItemsRequest) (
 		_it.Mimetype = string(mimetype)
 		_it.Error = string(errorStr)
 		_it.Sha512 = string(sha512)
+		_coll, err := d.getCollection(_it.Collectionid)
+		if err != nil {
+			return nil, status.Errorf(codes.Internal, "cannot get collection %s: %v", _it.Collectionid, err)
+		}
 		var it = &pb.Item{
 			Identifier: &pb.ItemIdentifier{
-				Collection: itemIdentifier.GetCollection(),
-				Signature:  itemIdentifier.GetSignature(),
+				Collection: _coll.Name,
+				Signature:  _it.Signature,
 			},
 			Metadata: &pb.ItemMetadata{
 				Type:       &_it.Type,
@@ -795,7 +799,7 @@ func (d *mediaserverPG) Ping(context.Context, *emptypb.Empty) (*pbgeneric.Defaul
 
 var getDerivateIngestItemMutex = map[string]*sync.Mutex{}
 
-func (d *mediaserverPG) GetDerivateIngestItem(_ context.Context, req *pb.DerivatIngestRequest) (*pb.DerivatIngestResponse, error) {
+func (d *mediaserverPG) GetDerivateIngestItem(ctx context.Context, req *pb.DerivatIngestRequest) (*pb.DerivatIngestResponse, error) {
 	id := strings.Join(req.GetSuffix(), "/")
 
 	// todo: correct locking including map operations
@@ -897,7 +901,7 @@ func (d *mediaserverPG) GetDerivateIngestItem(_ context.Context, req *pb.Derivat
 // overlapping of GetIngestItem calls must be prevented
 var getIngestItemMutex = &sync.Mutex{}
 
-func (d *mediaserverPG) GetIngestItem(context.Context, *emptypb.Empty) (*pb.IngestItem, error) {
+func (d *mediaserverPG) GetIngestItem(ctx context.Context, empty *emptypb.Empty) (*pb.IngestItem, error) {
 	var result = &pb.IngestItem{
 		Identifier: &pb.ItemIdentifier{},
 	}

@@ -10,10 +10,10 @@ require (
 	github.com/jackc/pgtype v1.14.3
 	github.com/jackc/pgx/v5 v5.6.0
 	github.com/je4/genericproto/v2 v2.0.3
-	github.com/je4/mediaserverproto/v2 v2.0.30
-	github.com/je4/miniresolver/v2 v2.0.15
+	github.com/je4/mediaserverproto/v2 v2.0.35
+	github.com/je4/miniresolver/v2 v2.0.17
 	github.com/je4/trustutil/v2 v2.0.19
-	github.com/je4/utils/v2 v2.0.38
+	github.com/je4/utils/v2 v2.0.41
 	github.com/rs/zerolog v1.33.0
 	gitlab.switch.ch/ub-unibas/go-ublogger v0.0.0-20240612084645-ba4f8357c0d4
 	google.golang.org/grpc v1.64.0
@@ -40,6 +40,6 @@ require (
 	golang.org/x/sync v0.7.0 // indirect
 	golang.org/x/sys v0.21.0 // indirect
 	golang.org/x/text v0.16.0 // indirect
-	google.golang.org/genproto/googleapis/rpc v0.0.0-20240610135401-a8a62080eff3 // indirect
-	k8s.io/klog/v2 v2.120.1 // indirect
+	google.golang.org/genproto/googleapis/rpc v0.0.0-20240624140628-dc46fd24d27d // indirect
+	k8s.io/klog/v2 v2.130.1 // indirect
 )
