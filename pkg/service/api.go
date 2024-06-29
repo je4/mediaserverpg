@@ -971,6 +971,25 @@ func (d *mediaserverPG) SetIngestItem(ctx context.Context, metadata *pb.IngestMe
 	if metadata == nil {
 		return nil, status.Errorf(codes.InvalidArgument, "metadata is nil")
 	}
+	coll, err := d.getCollection(metadata.GetItem().GetCollection())
+	if err != nil {
+		d.logger.Error().Err(err).Msg("cannot get collection")
+		return nil, status.Errorf(codes.Internal, "cannot get collection: %v", err)
+	}
+	if metadata.GetStatus() == "error" {
+		sqlStr := "UPDATE item SET error = $1, last_modified = now(), status = $2 WHERE collectionid = $3 AND signature = $4"
+		params := []any{
+			metadata.GetError(),
+			metadata.GetStatus(),
+			coll.Id,
+			metadata.GetItem().GetSignature(),
+		}
+		if _, err := d.conn.Exec(ctx, sqlStr, params...); err != nil {
+			d.logger.Error().Err(err).Msgf("cannot update item - '%s' - %v", sqlStr, params)
+			return nil, status.Errorf(codes.Internal, "cannot update item - '%s' - %v: %v", sqlStr, params, err)
+		}
+		return nil, status.Errorf(codes.Internal, "item %s/%s has error: %s", coll.Name, metadata.GetItem().GetSignature(), metadata.GetError())
+	}
 	metaItemMetadata := metadata.GetItemMetadata()
 	if metaItemMetadata == nil {
 		return nil, status.Errorf(codes.InvalidArgument, "item metadata is nil")
@@ -978,11 +997,6 @@ func (d *mediaserverPG) SetIngestItem(ctx context.Context, metadata *pb.IngestMe
 	metaCacheMetadata := metadata.GetCacheMetadata()
 	if metaCacheMetadata == nil {
 		return nil, status.Errorf(codes.InvalidArgument, "cache metadata is nil")
-	}
-	coll, err := d.getCollection(metadata.GetItem().GetCollection())
-	if err != nil {
-		d.logger.Error().Err(err).Msg("cannot get collection")
-		return nil, status.Errorf(codes.Internal, "cannot get collection: %v", err)
 	}
 	tx, err := d.conn.Begin(ctx)
 	if err != nil {
