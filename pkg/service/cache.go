@@ -47,6 +47,7 @@ func getCacheLoader(conn *pgxpool.Pool, logger zLogger.ZLogger) gcache.LoaderFun
 		var width zeronull.Int8
 		var height zeronull.Int8
 		var duration zeronull.Int8
+		var mimetype zeronull.Text
 		var sql string
 		var sqlParams = []any{id.Collection, id.Signature, id.Action}
 		if id.Params == "" {
@@ -65,13 +66,14 @@ func getCacheLoader(conn *pgxpool.Pool, logger zLogger.ZLogger) gcache.LoaderFun
 			&width,
 			&height,
 			&duration,
-			&c.Mimetype,
+			&mimetype,
 			&c.Filesize,
 			&path,
 			&storageid,
 		); err != nil {
 			return nil, errors.Wrapf(err, "cannot get cache %s/%s/%s/%s - %s", id.Collection, id.Signature, id.Action, id.Params, "getCacheByCollectionSignature")
 		}
+		c.Mimetype = string(mimetype)
 		c.Params = string(params)
 		c.Width = int(width)
 		c.Height = int(height)

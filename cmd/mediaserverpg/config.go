@@ -3,24 +3,24 @@ package main
 import (
 	"emperror.dev/errors"
 	"github.com/BurntSushi/toml"
-	loaderConfig "github.com/je4/trustutil/v2/pkg/config"
+	"github.com/je4/certloader/v2/pkg/loader"
 	"github.com/je4/utils/v2/pkg/config"
-	"github.com/je4/utils/v2/pkg/zLogger"
+	"github.com/je4/utils/v2/pkg/stashconfig"
 	"io/fs"
 	"os"
 )
 
 type MediaserverPGConfig struct {
-	LocalAddr               string                 `toml:"localaddr"`
-	ServerDomains           []string               `toml:"serverdomains"`
-	ResolverAddr            string                 `toml:"resolveraddr"`
-	ResolverTimeout         config.Duration        `toml:"resolvertimeout"`
-	ResolverNotFoundTimeout config.Duration        `toml:"resolvernotfoundtimeout"`
-	GRPCClient              map[string]string      `toml:"grpcclient"`
-	ServerTLS               loaderConfig.TLSConfig `toml:"servertls"`
-	ClientTLS               loaderConfig.TLSConfig `toml:"clienttls"`
-	DBConn                  config.EnvString       `toml:"dbconn"`
-	Log                     zLogger.Config         `toml:"log"`
+	LocalAddr               string             `toml:"localaddr"`
+	ServerDomains           []string           `toml:"serverdomains"`
+	ResolverAddr            string             `toml:"resolveraddr"`
+	ResolverTimeout         config.Duration    `toml:"resolvertimeout"`
+	ResolverNotFoundTimeout config.Duration    `toml:"resolvernotfoundtimeout"`
+	GRPCClient              map[string]string  `toml:"grpcclient"`
+	ServerTLS               loader.Config      `toml:"servertls"`
+	MiniresolverClientTLS   loader.Config      `toml:"miniresolverclienttls"`
+	DBConn                  config.EnvString   `toml:"dbconn"`
+	Log                     stashconfig.Config `toml:"log"`
 }
 
 func LoadMediaserverPGConfig(fSys fs.FS, fp string, conf *MediaserverPGConfig) error {

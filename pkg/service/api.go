@@ -240,6 +240,7 @@ func (d *mediaserverPG) GetCaches(_ context.Context, req *pb.CachesRequest) (*pb
 	var width zeronull.Int8
 	var height zeronull.Int8
 	var duration zeronull.Int8
+	var mimetype zeronull.Text
 	var totalCount int64
 	var c = &cache{}
 	for rows.Next() {
@@ -252,7 +253,7 @@ func (d *mediaserverPG) GetCaches(_ context.Context, req *pb.CachesRequest) (*pb
 			&width,
 			&height,
 			&duration,
-			&c.Mimetype,
+			&mimetype,
 			&c.Filesize,
 			&path,
 			&storageid,
@@ -260,6 +261,7 @@ func (d *mediaserverPG) GetCaches(_ context.Context, req *pb.CachesRequest) (*pb
 		); err != nil {
 			return nil, errors.Wrapf(err, "cannot get caches %s/%s - %s", itemIdentifier.GetCollection(), itemIdentifier.GetSignature(), "getCachesByCollectionSignature")
 		}
+		c.Mimetype = string(mimetype)
 		c.Params = string(params)
 		c.Width = int(width)
 		c.Height = int(height)
@@ -798,16 +800,19 @@ func (d *mediaserverPG) Ping(context.Context, *emptypb.Empty) (*pbgeneric.Defaul
 }
 
 var getDerivateIngestItemMutex = map[string]*sync.Mutex{}
+var getDerivateIngestItemMutexLock = &sync.Mutex{}
 
 func (d *mediaserverPG) GetDerivateIngestItem(ctx context.Context, req *pb.DerivatIngestRequest) (*pb.DerivatIngestResponse, error) {
 	id := strings.Join(req.GetSuffix(), "/")
 
 	// todo: correct locking including map operations
+	getDerivateIngestItemMutexLock.Lock()
 	mutex, ok := getDerivateIngestItemMutex[id]
 	if !ok {
 		mutex = &sync.Mutex{}
 		getDerivateIngestItemMutex[id] = mutex
 	}
+	getDerivateIngestItemMutexLock.Unlock()
 	mutex.Lock()
 	defer mutex.Unlock()
 	params := []any{req.GetType()}

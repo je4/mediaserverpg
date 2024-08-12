@@ -7,12 +7,12 @@ import (
 	"fmt"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/je4/certloader/v2/pkg/loader"
 	"github.com/je4/mediaserverpg/v2/configs"
 	"github.com/je4/mediaserverpg/v2/pkg/service"
 	mediaserverproto "github.com/je4/mediaserverproto/v2/pkg/mediaserver/proto"
 	"github.com/je4/miniresolver/v2/pkg/resolver"
 	"github.com/je4/trustutil/v2/pkg/certutil"
-	"github.com/je4/trustutil/v2/pkg/loader"
 	"github.com/je4/utils/v2/pkg/zLogger"
 	"github.com/rs/zerolog"
 	ublogger "gitlab.switch.ch/ub-unibas/go-ublogger"
@@ -138,7 +138,8 @@ func main() {
 		certutil.AddDefaultDNSNames(domainPrefix + mediaserverproto.Database_ServiceDesc.ServiceName)
 	}
 
-	serverTLSConfig, serverLoader, err := loader.CreateServerLoader(true, &conf.ServerTLS, nil, logger)
+	l := logger.With().Str("service", "server loader").Logger()
+	serverTLSConfig, serverLoader, err := loader.CreateServerLoader(true, &conf.ServerTLS, nil, &l)
 	if err != nil {
 		logger.Fatal().Err(err).Msg("cannot create server loader")
 	}
@@ -146,14 +147,16 @@ func main() {
 
 	// create client TLS certificate
 	// the certificate MUST contain "grpc:miniresolverproto.MiniResolver" or "*" in URIs
-	clientTLSConfig, clientLoader, err := loader.CreateClientLoader(&conf.ClientTLS, logger)
+	lmct := logger.With().Str("service", "minresolver client loader").Logger()
+	miniresolverClientTLSConfig, clientLoader, err := loader.CreateClientLoader(&conf.MiniresolverClientTLS, &lmct)
 	if err != nil {
 		logger.Fatal().Err(err).Msg("cannot create client loader")
 	}
 	defer clientLoader.Close()
 
 	// create resolver client
-	resolverClient, err := resolver.NewMiniresolverClient(conf.ResolverAddr, conf.GRPCClient, clientTLSConfig, serverTLSConfig, time.Duration(conf.ResolverTimeout), time.Duration(conf.ResolverNotFoundTimeout), logger)
+	lmc := logger.With().Str("service", "Miniresolver Client").Logger()
+	resolverClient, err := resolver.NewMiniresolverClient(conf.ResolverAddr, conf.GRPCClient, miniresolverClientTLSConfig, serverTLSConfig, time.Duration(conf.ResolverTimeout), time.Duration(conf.ResolverNotFoundTimeout), &lmc)
 	if err != nil {
 		logger.Fatal().Err(err).Msg("cannot create resolver client")
 	}
@@ -165,8 +168,8 @@ func main() {
 		logger.Fatal().Err(err).Msg("cannot create server")
 	}
 	addr := grpcServer.GetAddr()
-	l2 = _logger.With().Timestamp().Str("addr", addr).Logger() //.Output(output)
-	logger = &l2
+	laddr := _logger.With().Timestamp().Str("addr", addr).Logger() //.Output(output)
+	logger = &laddr
 
 	srv, err := service.NewMediaserverDatabasePG(conn, logger)
 	if err != nil {

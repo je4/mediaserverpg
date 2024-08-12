@@ -1,17 +1,82 @@
 localaddr = ":0"
 #localaddr = ":7653"
-serverdomains = ["ubmedia", ""]
+serverdomains = ["ubmedia"]
 #resolveraddr = "[::1]:7777"
 resolveraddr = "127.0.0.1:7777"
 resolvertimeout = "10m"
 resolvernotfoundtimeout = "10s"
 dbconn = "%%DATABASE_URL%%"
-
+#pa.2dc77c77c6c8b703.c64ea72702e2b121
 [servertls]
-type = "dev"
+type = "minivault"
+initialtimeout = "1h"
+[servertls.minivault]
+baseurl = "https://localhost:8759/api/v1"
+parenttoken = "pa.2dc48c915aae6a13.f7e4edf95d83e527" #pa.2dc483e73851c137.15d94e61e0b377f1
+tokentype = "server_cert"
+tokenpolicies = ["ubmedia.mediaserverdb"]
+tokeninterval = "2h"
+tokenttl = "1h"
+certtype = "server_cert"
+dnss = ["ubmedia.mediaserverproto.Database"]
+uris = []
+certinterval = "10m"
+certttl = "8m"
+ca = ["""-----BEGIN CERTIFICATE-----
+MIICxTCCAkqgAwIBAgIGAY4FTF/mMAoGCCqGSM49BAMDMIGYMQswCQYDVQQGEwJD
+SDETMBEGA1UECBMKQmFzZWwgQ2l0eTEOMAwGA1UEBxMFQmFzZWwxIDAeBgNVBAkM
+F1NjaMO2bmJlaW5zdHJhc3NlIDE4LTIwMQ0wCwYDVQQREwQ0MDU2MSEwHwYDVQQK
+ExhVbml2ZXJzaXR5IExpYnJhcnkgQmFzZWwxEDAOBgNVBAMTB0R1bW15Q0EwHhcN
+MjQwMzAzMTcxMTE1WhcNMzQwMzAxMTcxMTE1WjCBmDELMAkGA1UEBhMCQ0gxEzAR
+BgNVBAgTCkJhc2VsIENpdHkxDjAMBgNVBAcTBUJhc2VsMSAwHgYDVQQJDBdTY2jD
+tm5iZWluc3RyYXNzZSAxOC0yMDENMAsGA1UEERMENDA1NjEhMB8GA1UEChMYVW5p
+dmVyc2l0eSBMaWJyYXJ5IEJhc2VsMRAwDgYDVQQDEwdEdW1teUNBMHYwEAYHKoZI
+zj0CAQYFK4EEACIDYgAErHxZYoHwHzTqRg14Ve9/APs/D+sMSKDTpPTZYFocZedF
+VGJEkeaCqQvsCY5G9WaHXI7jZtewKo/bHM/WcmXZB+cZNmJn/IyBHJAYh5xN5WBY
+vUPJfRfQosSFr8SDE4MPo2EwXzAOBgNVHQ8BAf8EBAMCAoQwHQYDVR0lBBYwFAYI
+KwYBBQUHAwIGCCsGAQUFBwMBMA8GA1UdEwEB/wQFMAMBAf8wHQYDVR0OBBYEFH+I
+PuzNyAOrQ+rMTtywGqm3Z5ARMAoGCCqGSM49BAMDA2kAMGYCMQDJNau3j1v1FQHQ
+n7kn+gEATGOm+9fBsgUCGXmKvLZPIJI3NI2URLmlmASdEIrg/N4CMQCNQio9BHom
+JYLotIXmdUEmKuXZeKoc0eR1jA7kWdJNOvEpE73mx/zutDeNl3hRVP0=
+-----END CERTIFICATE-----
+"""]
+usesystempool = false
 
-[clienttls]
-type = "dev"
+[miniresolverclienttls]
+type = "minivault"
+initialtimeout = "1h"
+[miniresolverclienttls.minivault]
+baseurl = "https://localhost:8759/api/v1"
+parenttoken = "pa.2dc48c915aae6a13.f7e4edf95d83e527" #pa.2dc483e73851c137.15d94e61e0b377f1
+tokentype = "client_cert"
+tokenpolicies = ["ubmedia.mediaserverdb"]
+tokeninterval = "2m"
+tokenttl = "4m"
+certtype = "client_cert"
+dnss = []
+uris = ["grpc:miniresolverproto.MiniResolver"]
+ips = []
+certinterval = "1m"
+certttl = "30s"
+ca = ["""-----BEGIN CERTIFICATE-----
+MIICxTCCAkqgAwIBAgIGAY4FTF/mMAoGCCqGSM49BAMDMIGYMQswCQYDVQQGEwJD
+SDETMBEGA1UECBMKQmFzZWwgQ2l0eTEOMAwGA1UEBxMFQmFzZWwxIDAeBgNVBAkM
+F1NjaMO2bmJlaW5zdHJhc3NlIDE4LTIwMQ0wCwYDVQQREwQ0MDU2MSEwHwYDVQQK
+ExhVbml2ZXJzaXR5IExpYnJhcnkgQmFzZWwxEDAOBgNVBAMTB0R1bW15Q0EwHhcN
+MjQwMzAzMTcxMTE1WhcNMzQwMzAxMTcxMTE1WjCBmDELMAkGA1UEBhMCQ0gxEzAR
+BgNVBAgTCkJhc2VsIENpdHkxDjAMBgNVBAcTBUJhc2VsMSAwHgYDVQQJDBdTY2jD
+tm5iZWluc3RyYXNzZSAxOC0yMDENMAsGA1UEERMENDA1NjEhMB8GA1UEChMYVW5p
+dmVyc2l0eSBMaWJyYXJ5IEJhc2VsMRAwDgYDVQQDEwdEdW1teUNBMHYwEAYHKoZI
+zj0CAQYFK4EEACIDYgAErHxZYoHwHzTqRg14Ve9/APs/D+sMSKDTpPTZYFocZedF
+VGJEkeaCqQvsCY5G9WaHXI7jZtewKo/bHM/WcmXZB+cZNmJn/IyBHJAYh5xN5WBY
+vUPJfRfQosSFr8SDE4MPo2EwXzAOBgNVHQ8BAf8EBAMCAoQwHQYDVR0lBBYwFAYI
+KwYBBQUHAwIGCCsGAQUFBwMBMA8GA1UdEwEB/wQFMAMBAf8wHQYDVR0OBBYEFH+I
+PuzNyAOrQ+rMTtywGqm3Z5ARMAoGCCqGSM49BAMDA2kAMGYCMQDJNau3j1v1FQHQ
+n7kn+gEATGOm+9fBsgUCGXmKvLZPIJI3NI2URLmlmASdEIrg/N4CMQCNQio9BHom
+JYLotIXmdUEmKuXZeKoc0eR1jA7kWdJNOvEpE73mx/zutDeNl3hRVP0=
+-----END CERTIFICATE-----
+"""]
+usesystempool = false
 
 [log]
 level = "debug"
@@ -26,7 +91,8 @@ dataset=""
 #dataset="logs-mediaserver"
 [log.stash.tls]
 type="file"
-cert="certs/ub-log.ub.unibas.ch.cert.pem"
-key="certs/ub-log.ub.unibas.ch.key.pem"
 ca=["certs/ca.crt"]
 interval="1h"
+[log.stash.tls.file]
+cert="certs/ub-log.ub.unibas.ch.cert.pem"
+key="certs/ub-log.ub.unibas.ch.key.pem"
