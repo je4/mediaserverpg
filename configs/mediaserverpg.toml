@@ -15,13 +15,14 @@ baseurl = "https://localhost:8759/api/v1"
 parenttoken = "pa.2dc48c915aae6a13.f7e4edf95d83e527" #pa.2dc483e73851c137.15d94e61e0b377f1
 tokentype = "server_cert"
 tokenpolicies = ["ubmedia.mediaserverdb"]
-tokeninterval = "2h"
-tokenttl = "1h"
+tokeninterval = "1h"
+tokenttl = "2h"
 certtype = "server_cert"
 dnss = ["ubmedia.mediaserverproto.Database"]
 uris = []
-certinterval = "10m"
-certttl = "8m"
+ips = []
+certinterval = "8m"
+certttl = "10m"
 ca = ["""-----BEGIN CERTIFICATE-----
 MIICxTCCAkqgAwIBAgIGAY4FTF/mMAoGCCqGSM49BAMDMIGYMQswCQYDVQQGEwJD
 SDETMBEGA1UECBMKQmFzZWwgQ2l0eTEOMAwGA1UEBxMFQmFzZWwxIDAeBgNVBAkM

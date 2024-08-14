@@ -13,6 +13,7 @@ import (
 	pb "github.com/je4/mediaserverproto/v2/pkg/mediaserver/proto"
 	"github.com/je4/utils/v2/pkg/zLogger"
 	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	emptypb "google.golang.org/protobuf/types/known/emptypb"
 	timestamppb "google.golang.org/protobuf/types/known/timestamppb"
@@ -907,6 +908,9 @@ func (d *mediaserverPG) GetDerivateIngestItem(ctx context.Context, req *pb.Deriv
 var getIngestItemMutex = &sync.Mutex{}
 
 func (d *mediaserverPG) GetIngestItem(ctx context.Context, empty *emptypb.Empty) (*pb.IngestItem, error) {
+	// :authority
+	domain := metadata.ValueFromIncomingContext(ctx, "domain")
+	_ = domain
 	var result = &pb.IngestItem{
 		Identifier: &pb.ItemIdentifier{},
 	}
