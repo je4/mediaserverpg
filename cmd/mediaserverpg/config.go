@@ -12,7 +12,7 @@ import (
 
 type MediaserverPGConfig struct {
 	LocalAddr               string             `toml:"localaddr"`
-	ServerDomains           []string           `toml:"serverdomains"`
+	Domains                 []string           `toml:"domains"`
 	ResolverAddr            string             `toml:"resolveraddr"`
 	ResolverTimeout         config.Duration    `toml:"resolvertimeout"`
 	ResolverNotFoundTimeout config.Duration    `toml:"resolvernotfoundtimeout"`

@@ -130,7 +130,7 @@ func main() {
 
 	// create TLS Certificate.
 	// the certificate MUST contain <package>.<service> as DNS name
-	for _, domain := range conf.ServerDomains {
+	for _, domain := range conf.Domains {
 		var domainPrefix string
 		if domain != "" {
 			domainPrefix = domain + "."
@@ -163,7 +163,7 @@ func main() {
 	defer resolverClient.Close()
 
 	// create grpc server with resolver for name resolution
-	grpcServer, err := resolverClient.NewServer(conf.LocalAddr, conf.ServerDomains, true)
+	grpcServer, err := resolverClient.NewServer(conf.LocalAddr, conf.Domains, true)
 	if err != nil {
 		logger.Fatal().Err(err).Msg("cannot create server")
 	}

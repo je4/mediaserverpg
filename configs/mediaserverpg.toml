@@ -1,12 +1,13 @@
 localaddr = ":0"
 #localaddr = ":7653"
-serverdomains = ["ubmedia"]
+domains = ["ubmedia"]
 #resolveraddr = "[::1]:7777"
 resolveraddr = "127.0.0.1:7777"
 resolvertimeout = "10m"
 resolvernotfoundtimeout = "10s"
 dbconn = "%%DATABASE_URL%%"
 #pa.2dc77c77c6c8b703.c64ea72702e2b121
+
 [servertls]
 type = "minivault"
 initialtimeout = "1h"
