@@ -792,10 +792,15 @@ func (d *mediaserverPG) ExistsItem(_ context.Context, id *pb.ItemIdentifier) (*p
 	}, nil
 }
 
-func (d *mediaserverPG) Ping(context.Context, *emptypb.Empty) (*pbgeneric.DefaultResponse, error) {
+func (d *mediaserverPG) Ping(ctx context.Context, _ *emptypb.Empty) (*pbgeneric.DefaultResponse, error) {
+	var domain string
+	domains := metadata.ValueFromIncomingContext(ctx, "domain")
+	if len(domains) > 0 {
+		domain = domains[0]
+	}
 	return &pbgeneric.DefaultResponse{
 		Status:  pbgeneric.ResultStatus_OK,
-		Message: "pong",
+		Message: strings.TrimSpace(domain + " pong"),
 		Data:    nil,
 	}, nil
 }
@@ -908,7 +913,6 @@ func (d *mediaserverPG) GetDerivateIngestItem(ctx context.Context, req *pb.Deriv
 var getIngestItemMutex = &sync.Mutex{}
 
 func (d *mediaserverPG) GetIngestItem(ctx context.Context, empty *emptypb.Empty) (*pb.IngestItem, error) {
-	// :authority
 	domain := metadata.ValueFromIncomingContext(ctx, "domain")
 	_ = domain
 	var result = &pb.IngestItem{
