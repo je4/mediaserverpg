@@ -96,6 +96,12 @@ LIMIT $3 OFFSET $4`,
 			AND child.signature SIMILAR TO $3) < $4`,
 }
 
+func sortParams(params string) string {
+	parts := strings.Split(params, "/")
+	slices.Sort(parts)
+	return strings.Join(parts, "/")
+}
+
 func AfterConnectFunc(ctx context.Context, conn *pgx.Conn, logger zLogger.ZLogger) error {
 	for _, typeName := range customTypes {
 		t, err := conn.LoadType(ctx, typeName)
@@ -179,14 +185,14 @@ func (d *mediaserverPG) DeleteCache(_ context.Context, req *pb.CacheRequest) (*p
 		Collection: itemId.GetCollection(),
 		Signature:  itemId.GetSignature(),
 		Action:     req.GetAction(),
-		Params:     req.GetParams(),
+		Params:     sortParams(req.GetParams()),
 	}
 	cacheAny, err := d.cacheCache.Get(cacheId)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, status.Errorf(codes.NotFound, "cache %s/%s/%s/%s not found", itemId.GetCollection(), itemId.GetSignature(), req.GetAction(), req.GetParams())
+			return nil, status.Errorf(codes.NotFound, "cache %s/%s/%s/%s not found", itemId.GetCollection(), itemId.GetSignature(), req.GetAction(), sortParams(req.GetParams()))
 		}
-		return nil, status.Errorf(codes.Internal, "cannot get cache %s/%s/%s/%s from cache: %v", itemId.GetCollection(), itemId.GetSignature(), req.GetAction(), req.GetParams(), err)
+		return nil, status.Errorf(codes.Internal, "cannot get cache %s/%s/%s/%s from cache: %v", itemId.GetCollection(), itemId.GetSignature(), req.GetAction(), sortParams(req.GetParams()), err)
 	}
 	c, ok := cacheAny.(*cache)
 	if !ok {
@@ -208,7 +214,7 @@ func (d *mediaserverPG) DeleteCache(_ context.Context, req *pb.CacheRequest) (*p
 	d.cacheCache.Remove(cacheId)
 	return &pbgeneric.DefaultResponse{
 		Status:  pbgeneric.ResultStatus_OK,
-		Message: fmt.Sprintf("cache %s/%s/%s/%s deleted", itemId.GetCollection(), itemId.GetSignature(), req.GetAction(), req.GetParams()),
+		Message: fmt.Sprintf("cache %s/%s/%s/%s deleted", itemId.GetCollection(), itemId.GetSignature(), req.GetAction(), sortParams(req.GetParams())),
 		Data:    nil,
 	}, nil
 }
@@ -338,13 +344,13 @@ func (d *mediaserverPG) GetCache(_ context.Context, req *pb.CacheRequest) (*pb.C
 		Collection: itemId.GetCollection(),
 		Signature:  itemId.GetSignature(),
 		Action:     req.GetAction(),
-		Params:     req.GetParams(),
+		Params:     sortParams(req.GetParams()),
 	})
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
-			return nil, status.Errorf(codes.NotFound, "cache %s/%s/%s/%s not found", itemId.GetCollection(), itemId.GetSignature(), req.GetAction(), req.GetParams())
+			return nil, status.Errorf(codes.NotFound, "cache %s/%s/%s/%s not found", itemId.GetCollection(), itemId.GetSignature(), req.GetAction(), sortParams(req.GetParams()))
 		}
-		return nil, status.Errorf(codes.Internal, "cannot get cache %s/%s/%s/%s from cache: %v", itemId.GetCollection(), itemId.GetSignature(), req.GetAction(), req.GetParams(), err)
+		return nil, status.Errorf(codes.Internal, "cannot get cache %s/%s/%s/%s from cache: %v", itemId.GetCollection(), itemId.GetSignature(), req.GetAction(), sortParams(req.GetParams()), err)
 	}
 	c, ok := cacheAny.(*cache)
 	if !ok {

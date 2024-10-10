@@ -84,12 +84,15 @@ func main() {
 		defer loggerLoader.Close()
 	}
 
-	_logger, _logstash, _logfile := ublogger.CreateUbMultiLoggerTLS(conf.Log.Level, conf.Log.File,
+	_logger, _logstash, _logfile, err := ublogger.CreateUbMultiLoggerTLS(conf.Log.Level, conf.Log.File,
 		ublogger.SetDataset(conf.Log.Stash.Dataset),
 		ublogger.SetLogStash(conf.Log.Stash.LogstashHost, conf.Log.Stash.LogstashPort, conf.Log.Stash.Namespace, conf.Log.Stash.LogstashTraceLevel),
 		ublogger.SetTLS(conf.Log.Stash.TLS != nil),
 		ublogger.SetTLSConfig(loggerTLSConfig),
 	)
+	if err != nil {
+		log.Fatalf("cannot create logger: %v", err)
+	}
 	if _logstash != nil {
 		defer _logstash.Close()
 	}
